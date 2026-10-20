@@ -2,6 +2,14 @@ import type { VerifyEvidenceChapterKind } from '@lobechat/types';
 import { createStaticStyles, cssVar } from '@lobehub/ui';
 
 export const styles = createStaticStyles(({ css }) => ({
+  // Keep stepping and fullscreen visible on a phone; the frame is also named on its comment card.
+  compactControls: css`
+    @media (width <= 767px) {
+      .lobe-video__frame-number {
+        display: none;
+      }
+    }
+  `,
   overlay: css`
     position: absolute;
     inset: 0;

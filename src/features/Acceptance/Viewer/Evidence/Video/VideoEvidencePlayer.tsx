@@ -6,7 +6,15 @@ import type {
   AcceptanceReviewAnnotation,
   VerifyEvidenceChapter,
 } from '@lobechat/types';
-import { cx, Flexbox, useVideo, useVideoPlayer, Video, type VideoPlayer } from '@lobehub/ui';
+import {
+  cx,
+  Flexbox,
+  useVideo,
+  useVideoPlayer,
+  useVideoState,
+  Video,
+  type VideoPlayer,
+} from '@lobehub/ui';
 import type { ReactNode, RefObject } from 'react';
 import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -106,6 +114,8 @@ export const VideoEvidencePlayer = memo<VideoEvidencePlayerProps>(
   }) => {
     const { t } = useTranslation('verify');
     const player = useVideoPlayer();
+    const size = useVideoState(player, (state) => state.size);
+    const aspect = size ? size.width / size.height : 16 / 9;
     const [defaultRate] = useState(readStoredRate);
     const root = useRef<HTMLDivElement>(null);
     const requestedTime = useRef(initialTime);
@@ -162,15 +172,20 @@ export const VideoEvidencePlayer = memo<VideoEvidencePlayerProps>(
 
     return (
       <Flexbox gap={8} ref={root} width={'100%'}>
-        <div className={FLOATING_ACTION_HOST} style={{ width: '100%' }}>
+        <div {...{ [FLOATING_ACTION_HOST]: '' }} style={{ position: 'relative', width: '100%' }}>
           <Video.Root
+            className={styles.compactControls}
             defaultPlaybackRate={defaultRate}
             markers={markers}
             maxHeight={frameMaxHeight ? undefined : MAX_HEIGHT}
             player={player}
             sections={sections}
             src={src}
-            style={frameMaxHeight ? { width: '100%' } : undefined}
+            style={
+              frameMaxHeight
+                ? { width: '100%', maxWidth: `max(480px, calc(${frameMaxHeight} * ${aspect}))` }
+                : undefined
+            }
             onRateChange={storeRate}
             onRetry={onRefreshSource}
             onMarkerClick={(marker) => {
@@ -182,10 +197,8 @@ export const VideoEvidencePlayer = memo<VideoEvidencePlayerProps>(
               style={
                 frameMaxHeight
                   ? {
-                      height: frameMaxHeight,
                       marginInline: 'auto',
-                      maxWidth: '100%',
-                      width: 'auto',
+                      maxWidth: `calc(${frameMaxHeight} * ${aspect})`,
                     }
                   : undefined
               }
@@ -208,6 +221,7 @@ export const VideoEvidencePlayer = memo<VideoEvidencePlayerProps>(
           </Video.Root>
           {onComment && (
             <FloatingCommentAction
+              title={t('acceptance.comments.commentMedia')}
               onClick={() => {
                 player.pause();
                 onComment(player.getState().time);
