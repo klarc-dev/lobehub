@@ -40,6 +40,50 @@ export const styles = createStaticStyles(({ css }) => ({
 
     background: ${cssVar.colorError};
   `,
+  /**
+   * A comment region, drawn exactly like the region on a screenshot
+   * (`Evidence/Annotation` and `ScreenshotTiles`): a 2px box with two rings —
+   * the dark one separates it from a light frame, the light one from a dark
+   * frame — in the annotation colour (`colorError`) unless the caller passes
+   * the colour the screenshot overlay uses for the same comment.
+   */
+  mark: css`
+    pointer-events: none;
+
+    position: absolute;
+
+    border: 2px solid ${cssVar.colorError};
+    border-radius: 4px;
+
+    box-shadow:
+      0 0 0 1px rgb(0 0 0 / 45%),
+      inset 0 0 0 1px rgb(255 255 255 / 45%);
+  `,
+  /** The screenshot's numbered badge: 18px disc on the box's top-left corner. */
+  markBadge: css`
+    position: absolute;
+    inset-block-start: -9px;
+    inset-inline-start: -9px;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    color: ${cssVar.colorTextLightSolid};
+
+    background: ${cssVar.colorError};
+  `,
+  /** Selected reads the way an opened screenshot note does: a light outline on its disc. */
+  markBadgeActive: css`
+    outline: 2px solid ${cssVar.colorTextLightSolid};
+  `,
   draft: css`
     pointer-events: none;
     position: absolute;
