@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 
+import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { MAIN_SIDEBAR_EXCLUDE_TRIGGERS } from '@/const/topic';
 import { useActiveRouteParams } from '@/hooks/useActiveRouteParams';
 import { useChatStore } from '@/store/chat';
@@ -10,6 +11,8 @@ import {
   useProjectDirectoryStore,
   useProjectTopics,
 } from '@/store/projectWorkingDirectory';
+import { useUserStore } from '@/store/user';
+import { userProfileSelectors, workspaceUserSettingsSelectors } from '@/store/user/selectors';
 import type { ChatTopic, TopicGroupMode, TopicSortBy } from '@/types/topic';
 
 import { useTopicListReveal, useTopicListScope } from './TopicListScope';
@@ -50,28 +53,42 @@ export const useScopedSidebarTopics = (
   const visibleLimit = pageSize + (reveal?.extraRows ?? 0);
   const running = useChatStore(operationSelectors.visiblyRunningTopicIds);
   const directories = useProjectDirectories(scope?.projectId);
-  const visible = useMemo(() => {
-    const list: ChatTopic[] = (topics ?? []).filter(
-      (topic) => !topic.trigger || !MAIN_SIDEBAR_EXCLUDE_TRIGGERS.includes(topic.trigger),
-    );
-    return selectSidebarTopics(
-      list,
-      visibleLimit,
-      sortBy,
-      includeCompleted,
-      list.find((topic) => topic.id === topicId),
-    );
-  }, [topics, topicId, visibleLimit, sortBy, includeCompleted]);
+  const activeWorkspaceId = useActiveWorkspaceId();
+  const onlyMine = useUserStore(workspaceUserSettingsSelectors.topicOnlyMine(activeWorkspaceId));
+  const userId = useUserStore(userProfileSelectors.userId);
+  // Project topics arrive in full, so the "only mine" filter applies here
+  // instead of on the server.
+  const sidebarTopics = useMemo(
+    () =>
+      (topics ?? []).filter(
+        (topic: ChatTopic) =>
+          !topic.trigger || !MAIN_SIDEBAR_EXCLUDE_TRIGGERS.includes(topic.trigger),
+      ),
+    [topics],
+  );
+  const listed = useMemo(
+    () => (onlyMine ? sidebarTopics.filter((topic) => topic.userId === userId) : sidebarTopics),
+    [sidebarTopics, onlyMine, userId],
+  );
+  const visible = useMemo(
+    () =>
+      selectSidebarTopics(
+        listed,
+        visibleLimit,
+        sortBy,
+        includeCompleted,
+        // The open topic stays listed even when the filter hides it.
+        sidebarTopics.find((topic) => topic.id === topicId),
+      ),
+    [sidebarTopics, listed, topicId, visibleLimit, sortBy, includeCompleted],
+  );
   const groups = useMemo(
     () => groupSidebarTopics(visible, groupMode, sortBy, running, directories),
     [visible, groupMode, sortBy, running, directories],
   );
   const hasMore =
-    (topics ?? []).filter(
-      (topic) =>
-        (!topic.trigger || !MAIN_SIDEBAR_EXCLUDE_TRIGGERS.includes(topic.trigger)) &&
-        (includeCompleted || topic.status !== 'completed'),
-    ).length > visibleLimit;
+    listed.filter((topic) => includeCompleted || topic.status !== 'completed').length >
+    visibleLimit;
   return {
     scope,
     topics: visible,

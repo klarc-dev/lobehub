@@ -7,10 +7,12 @@ import { TopicListRevealContext, TopicListScopeContext } from './TopicListScope'
 import { useScopedSidebarTopics } from './useScopedTopics';
 
 const fixture = vi.hoisted(() => ({ topicId: undefined as string | undefined }));
+const userFixture = vi.hoisted(() => ({ topicOnlyMine: false, userId: 'me' }));
 const updateSystemStatus = vi.hoisted(() => vi.fn());
 const rows = [
   {
     id: 'old',
+    userId: 'me',
     title: 'Old',
     agentId: 'agent-a',
     createdAt: 10,
@@ -21,6 +23,7 @@ const rows = [
   },
   {
     id: 'new',
+    userId: 'teammate',
     title: 'New',
     agentId: 'agent-b',
     createdAt: 30,
@@ -30,6 +33,7 @@ const rows = [
   },
   {
     id: 'star',
+    userId: 'me',
     title: 'Favorite',
     agentId: 'agent-a',
     createdAt: 5,
@@ -39,6 +43,7 @@ const rows = [
   },
   {
     id: 'done',
+    userId: 'teammate',
     title: 'Completed',
     agentId: 'agent-b',
     createdAt: 50,
@@ -57,6 +62,15 @@ vi.mock('@/hooks/useActiveRouteParams', () => ({ useActiveRouteParams: () => fix
 vi.mock('@/store/chat', () => ({ useChatStore: () => new Set<string>() }));
 vi.mock('@/store/global', () => ({
   useGlobalStore: (selector: (s: unknown) => unknown) => selector({ updateSystemStatus }),
+}));
+vi.mock('@/store/user', () => ({
+  useUserStore: (selector: (s: typeof userFixture) => unknown) => selector(userFixture),
+}));
+vi.mock('@/store/user/selectors', () => ({
+  userProfileSelectors: { userId: (s: typeof userFixture) => s.userId },
+  workspaceUserSettingsSelectors: {
+    topicOnlyMine: () => (s: typeof userFixture) => s.topicOnlyMine,
+  },
 }));
 vi.mock('i18next', () => ({ t: (key: string) => key }));
 
@@ -78,7 +92,21 @@ const wrapper = ({ children }: PropsWithChildren) =>
 describe('Project topics use the canonical Agent sidebar rules', () => {
   beforeEach(() => {
     fixture.topicId = undefined;
+    userFixture.topicOnlyMine = false;
     updateSystemStatus.mockClear();
+  });
+  it('lists only the caller topics with the workspace only-mine filter, keeping the open one', () => {
+    userFixture.topicOnlyMine = true;
+    const { result, rerender } = renderHook(
+      () => useScopedSidebarTopics(20, 'updatedAt', 'flat', false),
+      { wrapper },
+    );
+    expect(result.current.topics.map((topic) => topic.id)).toEqual(['star', 'old']);
+    expect(result.current.hasMore).toBe(false);
+
+    fixture.topicId = 'new';
+    rerender();
+    expect(result.current.topics.map((topic) => topic.id)).toEqual(['star', 'old', 'new']);
   });
   it('pins favorites and orders the rest by the selected timestamp across Agents', () => {
     const { result, rerender } = renderHook(

@@ -75,6 +75,7 @@ export const query = async (
     pageSize = 9999,
     groupId,
     isInbox,
+    onlyMine,
     sortBy,
     timing,
     triggers,
@@ -184,6 +185,9 @@ export const query = async (
     excludeStatuses && excludeStatuses.length > 0
       ? or(isNull(topics.status), not(inArray(topics.status, excludeStatuses as ChatTopicStatus[])))
       : undefined;
+  // In a workspace `ownership()` matches every member's rows; this narrows the
+  // list to the caller's own topics.
+  const onlyMineCondition = onlyMine ? eq(topics.userId, ctx.userId) : undefined;
   // Topics created before the marker existed carry neither key and therefore
   // match no target — they cannot: what they configured was never recorded
   // anywhere in the row. `topics_agent_id_idx` still drives the scan, so the
@@ -202,6 +206,7 @@ export const query = async (
       excludeTriggerCondition,
       triggerCondition,
       excludeStatusCondition,
+      onlyMineCondition,
     );
 
     const [items, totalResult] = await Promise.all([
@@ -286,6 +291,7 @@ export const query = async (
       excludeTriggerCondition,
       triggerCondition,
       excludeStatusCondition,
+      onlyMineCondition,
     );
 
     const [items, totalResult] = await Promise.all([
@@ -360,6 +366,7 @@ export const query = async (
     excludeTriggerCondition,
     triggerCondition,
     excludeStatusCondition,
+    onlyMineCondition,
   );
 
   const [items, totalResult] = await Promise.all([

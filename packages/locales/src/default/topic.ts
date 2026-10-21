@@ -114,6 +114,7 @@ export default {
   'filter.groupMode.byStatus': 'By status',
   'filter.groupMode.byTime': 'By time',
   'filter.groupMode.flat': 'Flat',
+  'filter.onlyMine': 'Only my topics',
   'filter.organize': 'Organize',
   'filter.showCompleted': 'Include Archived',
   'filter.sort': 'Sort by',
