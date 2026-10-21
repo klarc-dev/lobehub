@@ -1,6 +1,9 @@
 import { type LobeChatDatabase } from '@lobechat/database';
+import { TRPCError } from '@trpc/server';
 
 import { UserModel } from '@/database/models/user';
+import { getActiveWorkspaceMembershipRole } from '@/database/models/workspace';
+import { normalizeWorkspaceId } from '@/database/utils/workspace';
 import { type TrustedClientUserInfo } from '@/libs/trusted-client';
 
 import { trpc } from '../init';
@@ -20,7 +23,22 @@ interface MarketUserContext {
 export const resolveMarketUserContext = async (
   ctx: ContextWithServerDB,
 ): Promise<MarketUserContext> => {
-  // If userId or serverDB is not available, skip fetching user info
+  // Scope validation must stay outside the optional profile lookup's catch.
+  // Public Market routers also use this middleware, without userAuth.
+  const workspaceId = normalizeWorkspaceId(ctx.workspaceId) ?? undefined;
+  if (workspaceId) {
+    if (!ctx.userId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+    if (!ctx.serverDB) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR' });
+    const role = await getActiveWorkspaceMembershipRole(ctx.serverDB, {
+      userId: ctx.userId,
+      workspaceId,
+    });
+    if (!role || !['viewer', 'member', 'admin', 'owner'].includes(role)) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Active workspace membership required' });
+    }
+  }
+
+  // Anonymous personal discovery does not require a Market identity.
   if (!ctx.userId || !ctx.serverDB) return { marketUserInfo: undefined };
 
   try {
@@ -34,7 +52,7 @@ export const resolveMarketUserContext = async (
       userId: ctx.userId,
       // In a workspace context, the token acts as the workspace's mirrored
       // organization; absent for personal requests.
-      ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
     };
 
     // Fetch market access token from user_settings.market

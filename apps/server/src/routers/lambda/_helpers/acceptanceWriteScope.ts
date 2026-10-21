@@ -10,31 +10,31 @@ export interface AcceptanceScopeCtx {
 /**
  * May this caller write to this acceptance?
  *
- * The creator always may. Beyond that, an acceptance that belongs to a workspace
- * may also be managed by an OWNER of **that** workspace — not of the caller's
- * currently-active one, which is frequently a different workspace or none at
- * all. Reading membership off the row's own workspace is what makes the rule
- * stable no matter where the caller happens to be standing, and it is the same
- * rule `getBundle` reports as `canReview`, so the page can never advertise an
- * action the mutation would refuse.
+ * Personal records are writable by their creator. Workspace creator authority
+ * requires active member-or-higher membership in the record's own workspace.
+ * An owner of that workspace may also manage another creator's acceptance.
+ * The optional request scope never substitutes for the resource's scope.
  */
 export async function canManageAcceptance(
   ctx: AcceptanceScopeCtx,
   acceptance: Pick<AcceptanceItem, 'userId' | 'workspaceId'>,
 ): Promise<boolean> {
-  if (ctx.userId && ctx.userId === acceptance.userId) return true;
-  if (!ctx.userId || !acceptance.workspaceId) return false;
+  if (!ctx.userId) return false;
+  if (!acceptance.workspaceId) return ctx.userId === acceptance.userId;
 
   const member = await new WorkspaceMemberModel(ctx.serverDB, ctx.userId).getMember(
     acceptance.workspaceId,
     ctx.userId,
   );
-  return member?.role === 'owner';
+  return (
+    member?.role === 'owner' ||
+    (ctx.userId === acceptance.userId && !!member && ['member', 'admin'].includes(member.role))
+  );
 }
 
 /**
  * Batch twin of {@link canManageAcceptance} for sweep and list endpoints: same
- * rule, but the caller's roles in every distinct foreign workspace come back in
+ * rule, but the caller's roles in every distinct resource workspace come back in
  * ONE read — a 200-row sweep, or a participated page spanning many workspaces,
  * must not turn authorization into a chain of sequential queries.
  */
@@ -44,20 +44,17 @@ export async function filterManageableAcceptances<
   if (!ctx.userId) return [];
   const userId = ctx.userId;
 
-  const foreignWorkspaceIds = [
-    ...new Set(
-      rows
-        .filter((row) => row.userId !== userId && row.workspaceId)
-        .map((row) => row.workspaceId as string),
-    ),
+  const workspaceIds = [
+    ...new Set(rows.flatMap((row) => (row.workspaceId ? [row.workspaceId] : []))),
   ];
   const roles = await new WorkspaceMemberModel(ctx.serverDB, userId).getRolesInWorkspaces(
-    foreignWorkspaceIds,
+    workspaceIds,
     userId,
   );
 
-  return rows.filter(
-    (row) =>
-      row.userId === userId || (row.workspaceId ? roles.get(row.workspaceId) === 'owner' : false),
-  );
+  return rows.filter((row) => {
+    if (!row.workspaceId) return row.userId === userId;
+    const role = roles.get(row.workspaceId);
+    return role === 'owner' || (row.userId === userId && (role === 'member' || role === 'admin'));
+  });
 }

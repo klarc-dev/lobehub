@@ -3,7 +3,6 @@ import { asc, eq } from 'drizzle-orm';
 import pMap from 'p-map';
 import { z } from 'zod';
 
-import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
 import {
   verifyCheckResults,
   verifyEvidence,
@@ -14,6 +13,8 @@ import { isUuid } from '@/database/utils/uuid';
 import { publicProcedure } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { createEvidenceFileResolver } from '@/server/services/verify';
+
+import { resolveReportReadAccess } from './_helpers/reportReadAccess';
 
 const publicVerifyReportProcedure = publicProcedure.use(serverDatabase);
 
@@ -41,15 +42,7 @@ const findReadableVerifyRun = async (
   });
   if (!run) return null;
 
-  const isOwner = Boolean(ctx.userId) && ctx.userId === run.userId;
-  let canRead = isOwner || run.visibility === 'public';
-  if (!canRead && ctx.userId && run.workspaceId) {
-    const member = await new WorkspaceMemberModel(ctx.serverDB, ctx.userId).getMember(
-      run.workspaceId,
-      ctx.userId,
-    );
-    canRead = Boolean(member);
-  }
+  const { canRead, isOwner } = await resolveReportReadAccess(ctx, run);
 
   return canRead ? { isOwner, run } : null;
 };

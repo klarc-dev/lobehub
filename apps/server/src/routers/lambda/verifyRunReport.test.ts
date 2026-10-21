@@ -87,6 +87,38 @@ describe('verifyRunReportProcedures.getRunAcceptanceRound', () => {
     });
   });
 
+  it('denies a revoked creator private report bundle and round without a workspace header', async () => {
+    const findFirst = serveRun({ ...baseRun, visibility: 'private', workspaceId: 'ws-1' });
+    expect(await callerFor('owner-user').getReportBundle({ verifyRunId: RUN_UUID })).toBeNull();
+    expect(
+      await callerFor('owner-user').getRunAcceptanceRound({ verifyRunId: RUN_UUID }),
+    ).toBeNull();
+    expect(findFirst).toHaveBeenCalledTimes(2);
+    expect(mocks.getMember).toHaveBeenCalledWith('ws-1', 'owner-user');
+  });
+
+  it('redacts private origin from a public workspace report for its removed creator', async () => {
+    const run = {
+      ...baseRun,
+      metadata: { origin: { topicId: 'private-topic' }, summary: 'public summary' },
+      workspaceId: 'ws-1',
+    };
+    mocks.getServerDB.mockResolvedValue({
+      query: {
+        verifyRuns: { findFirst: vi.fn().mockResolvedValue(run) },
+        verifyReports: { findFirst: vi.fn().mockResolvedValue(undefined) },
+      },
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({ orderBy: vi.fn().mockResolvedValue([]) })),
+        })),
+      })),
+    });
+    const bundle = await callerFor('owner-user').getReportBundle({ verifyRunId: RUN_UUID });
+    expect(bundle?.isOwner).toBe(false);
+    expect(bundle?.run.metadata).toEqual({ summary: 'public summary' });
+  });
+
   it('lets workspace members resolve a private workspace run', async () => {
     serveRun({ ...baseRun, visibility: 'private', workspaceId: 'ws-1' });
     mocks.getMember.mockResolvedValue({ role: 'viewer' });

@@ -23,7 +23,6 @@ import { ProjectModel } from '@/database/models/project';
 import { ScmChangeRequestModel } from '@/database/models/scm';
 import { VerifyReviewPredictionModel } from '@/database/models/verifyReviewPrediction';
 import { VerifyRunModel } from '@/database/models/verifyRun';
-import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
 import { users } from '@/database/schemas';
 import type { AcceptanceItem } from '@/database/schemas/verify';
 import { acceptances } from '@/database/schemas/verify';
@@ -69,6 +68,7 @@ import {
 import { canManageAcceptance, filterManageableAcceptances } from './_helpers/acceptanceWriteScope';
 import { assertWorkspaceRowManageable } from './_helpers/assertWorkspaceRowManageable';
 import * as goalGate from './_helpers/goalGateAcceptance';
+import { canReadAcceptance, resolveReportReadAccess } from './_helpers/reportReadAccess';
 
 /**
  * A reviewer's circled region. On video evidence it also carries the frame
@@ -203,22 +203,6 @@ export const resolveAcceptanceForWrite = async (
       { actorUserId: ctx.userId },
     ),
   };
-};
-
-const canReadAcceptance = async (
-  ctx: { serverDB: LobeChatDatabase; userId?: string | null },
-  acceptance: AcceptanceItem,
-) => {
-  if (ctx.userId && ctx.userId === acceptance.userId) return true;
-  if (acceptance.visibility === 'public') return true;
-  if (!ctx.userId || !acceptance.workspaceId) return false;
-  // Membership in the acceptance's OWN workspace — not the viewer's currently
-  // active one, which may be a different workspace entirely.
-  const member = await new WorkspaceMemberModel(ctx.serverDB, ctx.userId).getMember(
-    acceptance.workspaceId,
-    ctx.userId,
-  );
-  return Boolean(member);
 };
 
 /**
@@ -633,8 +617,8 @@ export const acceptanceRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Acceptance not found' });
       }
 
-      const isOwner = Boolean(ctx.userId) && ctx.userId === acceptance.userId;
-      if (!isOwner && !(await canReadAcceptance(ctx, acceptance))) {
+      const { canRead, isOwner } = await resolveReportReadAccess(ctx, acceptance);
+      if (!canRead) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Acceptance not found' });
       }
 
