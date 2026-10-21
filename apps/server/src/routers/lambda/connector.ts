@@ -49,6 +49,7 @@ import {
   assertWorkspaceRowManageable,
   isWorkspaceNonOwner,
 } from './_helpers/assertWorkspaceRowManageable';
+import { projectConnectorInventory } from './_helpers/connectorProjection';
 
 const connectorProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
@@ -145,15 +146,11 @@ export const connectorRouter = router({
     const toolsByConnector = await Promise.all(
       connectors.map(async (c) => {
         const tools = await ctx.connectorToolModel.queryByConnector(c.id);
-        // Never ship decrypted OAuth tokens or the client secret to the browser.
-        const { credentials: _credentials, oidcConfig, ...rest } = c;
-        const safeOidcConfig = oidcConfig ? { ...oidcConfig, clientSecret: undefined } : oidcConfig;
         const author = authorMap.get(resolveConnectorAuthorizerId(c) ?? '');
         return {
-          ...rest,
+          ...projectConnectorInventory(c),
           authorizedByAvatar: author?.avatar ?? null,
           authorizedByName: author?.name ?? null,
-          oidcConfig: safeOidcConfig,
           tools,
         };
       }),
@@ -182,16 +179,11 @@ export const connectorRouter = router({
       return Promise.all(
         connectors.map(async (c) => {
           const tools = await ctx.connectorToolModel.queryByConnector(c.id);
-          const { credentials: _credentials, oidcConfig, ...rest } = c;
-          const safeOidcConfig = oidcConfig
-            ? { ...oidcConfig, clientSecret: undefined }
-            : oidcConfig;
           const author = authorMap.get(resolveConnectorAuthorizerId(c) ?? '');
           return {
-            ...rest,
+            ...projectConnectorInventory(c),
             authorizedByAvatar: author?.avatar ?? null,
             authorizedByName: author?.name ?? null,
-            oidcConfig: safeOidcConfig,
             tools,
           };
         }),
@@ -231,17 +223,12 @@ export const connectorRouter = router({
         .filter((c) => !!c.agentId && agentMetaById.has(c.agentId))
         .map(async (c) => {
           const tools = await ctx.connectorToolModel.queryByConnector(c.id);
-          const { credentials: _credentials, oidcConfig, ...rest } = c;
-          const safeOidcConfig = oidcConfig
-            ? { ...oidcConfig, clientSecret: undefined }
-            : oidcConfig;
           const meta = agentMetaById.get(c.agentId!);
           return {
-            ...rest,
+            ...projectConnectorInventory(c),
             agentAvatar: meta?.avatar ?? null,
             agentName: meta?.name ?? null,
             agentTitle: meta?.title ?? null,
-            oidcConfig: safeOidcConfig,
             tools,
           };
         }),
