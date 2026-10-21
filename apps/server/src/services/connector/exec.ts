@@ -26,7 +26,9 @@ export class ConnectorToolCallError extends Error {
  * - the connector must exist and be enabled,
  * - the tool must exist in the synced tool list (no calling unsynced / forged
  *   tool names — they would otherwise be forwarded blindly to the remote MCP),
- * - the tool must not be disabled.
+ * - the tool must not be disabled or require approval. This direct endpoint has
+ *   no trusted operation-bound approval proof, so approval-required calls must
+ *   use the agent runtime's durable approval workflow instead.
  *
  * Refreshes the OAuth token first, then calls the remote MCP with the decrypted
  * credentials. Shared by the `connector.callTool` tRPC procedure.
@@ -58,6 +60,16 @@ export const callConnectorToolById = async (
     throw new ConnectorToolCallError(
       'FORBIDDEN',
       `Tool '${params.toolName}' is disabled for this connector`,
+    );
+  }
+
+  // Unlike ToolExecutionService, this direct-call path has no durable operation
+  // or trusted approval decision. Client-side confirmation (including classic
+  // chat) and caller-supplied arguments cannot authorize execution here.
+  if (tool.permission === ConnectorToolPermission.needs_approval) {
+    throw new ConnectorToolCallError(
+      'FORBIDDEN',
+      `Tool '${params.toolName}' requires approval through the agent runtime and cannot be called directly`,
     );
   }
 

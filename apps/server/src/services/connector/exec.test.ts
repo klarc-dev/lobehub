@@ -79,6 +79,50 @@ describe('callConnectorToolById', () => {
     expect(mcpService.callTool).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { caller: 'owner', scope: 'personal', userId: 'owner', workspaceId: null },
+    { caller: 'member', scope: 'shared', userId: 'owner', workspaceId: 'workspace' },
+  ])(
+    'rejects $scope approval-required tools for the $caller before any upstream work',
+    async (scope) => {
+      const ctx = makeCtx(
+        [{ ...connector, userId: scope.userId, workspaceId: scope.workspaceId }],
+        [tool({ permission: ConnectorToolPermission.needs_approval })],
+      );
+
+      await expect(
+        callConnectorToolById({ identifier: 'my-conn', toolName: 'do_thing' }, ctx),
+      ).rejects.toMatchObject({ code: 'FORBIDDEN', message: expect.stringContaining('approval') });
+      expect(ensureFreshConnectorToken).not.toHaveBeenCalled();
+      expect(scheduleStaleConnectorToolsRefresh).not.toHaveBeenCalled();
+      expect(mcpService.callTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { approved: true },
+    { approval: { operationId: 'forged-operation', status: 'approved' } },
+    { humanIntervention: 'never', permission: 'auto', skipApproval: true },
+  ])('does not treat caller-supplied approval claims as permission: %j', async (claims) => {
+    const ctx = makeCtx(
+      [connector],
+      [tool({ permission: ConnectorToolPermission.needs_approval })],
+    );
+    // Extra wire fields and tool arguments are untrusted, even if a caller
+    // bypasses the router schema and reaches this service directly.
+    const params = {
+      ...claims,
+      args: JSON.stringify(claims),
+      identifier: 'my-conn',
+      toolName: 'do_thing',
+    };
+
+    await expect(callConnectorToolById(params, ctx)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(ensureFreshConnectorToken).not.toHaveBeenCalled();
+    expect(scheduleStaleConnectorToolsRefresh).not.toHaveBeenCalled();
+    expect(mcpService.callTool).not.toHaveBeenCalled();
+  });
+
   it('calls the remote MCP with the connector auth for an allowed tool', async () => {
     vi.mocked(mcpService.callTool).mockResolvedValue({ success: true });
     const ctx = makeCtx([connector], [tool()]);
