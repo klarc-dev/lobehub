@@ -7,6 +7,7 @@ import { ConnectorToolModel } from '@/database/models/connectorTool';
 import { serverDB } from '@/database/server';
 import { appEnv } from '@/envs/app';
 import { KeyVaultsGateKeeper } from '@/server/modules/KeyVaultsEncrypt';
+import { authorizeConnectorOAuthCallback } from '@/server/services/connector/callbackAuthorization';
 import { exchangeConnectorCode, toClientInformation } from '@/server/services/connector/oauth';
 import { consumeConnectorOAuthState } from '@/server/services/connector/stateStore';
 import { syncConnectorToolsById } from '@/server/services/connector/sync';
@@ -117,10 +118,7 @@ export const GET = async (req: NextRequest) => {
       gateKeeper,
     );
 
-    const connector = await connectorModel.findById(payload.connectorId);
-    if (!connector) {
-      return renderFailure('connector_not_found');
-    }
+    const connector = await authorizeConnectorOAuthCallback(serverDB, connectorModel, payload);
 
     const oidc = connector.oidcConfig;
     if (!oidc?.clientId) {
@@ -131,6 +129,19 @@ export const GET = async (req: NextRequest) => {
     if (!metadata) {
       return renderFailure('metadata_discovery_failed');
     }
+
+    // Discovery and exchange both await external servers. Re-read authority at
+    // each boundary rather than treating the consumed state as a permission.
+    const assertCurrentAuthorization = async () => {
+      const current = await authorizeConnectorOAuthCallback(serverDB, connectorModel, payload);
+      if (
+        JSON.stringify(current.oidcConfig) !== JSON.stringify(oidc) ||
+        current.mcpServerUrl !== connector.mcpServerUrl
+      ) {
+        throw new Error('connector_configuration_changed');
+      }
+    };
+    await assertCurrentAuthorization();
 
     const { authMethod, tokens } = await exchangeConnectorCode({
       authorizationCode: code,
@@ -146,6 +157,7 @@ export const GET = async (req: NextRequest) => {
       clientSecret: oidc.clientSecret,
     });
 
+    await assertCurrentAuthorization();
     await connectorModel.update(payload.connectorId, {
       credentials: JSON.stringify(credentials),
       // Remember the auth method that worked so refreshes don't fail the same way.
@@ -161,6 +173,9 @@ export const GET = async (req: NextRequest) => {
       payload.lobeUserId,
       payload.workspaceId,
     );
+    // Keep this outside the sync-error fallback: revoked authority is not a
+    // successful authorization with temporarily unavailable tools.
+    await authorizeConnectorOAuthCallback(serverDB, connectorModel, payload);
     let synced = false;
     try {
       const { toolCount } = await syncConnectorToolsById(payload.connectorId, {

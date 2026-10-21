@@ -98,7 +98,7 @@ export const RedisKeys = {
    * Lobechat core scope - for application-level caching
    */
   lobechat: {
-    // Add lobechat scope keys here as needed
+    connectorOAuthState: (state: string): string => `connector:oauth-state:${state}`,
   },
   /**
    * Send-path cache scope — see {@link RedisKeyNamespace.SEND_PATH_CACHE}.
