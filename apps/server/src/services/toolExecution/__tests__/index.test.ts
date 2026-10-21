@@ -9,6 +9,9 @@ import { getScopedOnlineDevices } from '@/server/services/deviceGateway/scopedDe
 import { ToolExecutionService } from '../index';
 import { localSystemRuntime } from '../serverRuntimes/localSystem';
 
+vi.mock('@/database/models/workspace', () => ({
+  getActiveWorkspaceMembershipRole: vi.fn().mockResolvedValue('member'),
+}));
 vi.mock('@/server/services/deviceGateway', () => ({
   deviceGateway: {
     executeMcpCall: vi.fn(),
@@ -20,16 +23,13 @@ vi.mock('@/server/services/deviceGateway', () => ({
 vi.mock('@/server/services/deviceGateway/dispatchAuthorization', () => ({
   resolveDeviceDispatchAuthorizationFailure: vi.fn().mockResolvedValue(undefined),
 }));
-// The tunnel fallback must use the visibility-aware scoped helper, never the
-// raw (visibility-blind) gateway pool — see resolveMcpTunnelTarget.
 vi.mock('@/server/services/deviceGateway/scopedDevices', () => ({
   getScopedOnlineDevices: vi.fn().mockResolvedValue([]),
 }));
 
 describe('ToolExecutionService', () => {
   it('keeps a readable content when a runtime throws a plain budget error object', async () => {
-    // The lobehub provider rejects with a plain object (not an Error) whose
-    // message is nested under `error.message`.
+    // The provider rejects with a plain object whose message is under `error.message`.
     const budgetError = {
       budget: { availableCredits: 0, requiredCredits: 1219, shortfallCredits: 1219 },
       error: { message: 'Budget exceeded' },

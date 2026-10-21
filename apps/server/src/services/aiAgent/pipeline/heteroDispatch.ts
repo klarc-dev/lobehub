@@ -39,7 +39,6 @@ import { CompletionLifecycle } from '@/server/services/agentRuntime/CompletionLi
 import { hookDispatcher } from '@/server/services/agentRuntime/hooks';
 import type { AgentHook } from '@/server/services/agentRuntime/hooks/types';
 import { deviceGateway } from '@/server/services/deviceGateway';
-import { resolveDeviceDispatchAuthorizationFailure } from '@/server/services/deviceGateway/dispatchAuthorization';
 import { HeterogeneousAgentService } from '@/server/services/heterogeneousAgent';
 import type { ConversationHistoryEntry } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
 import { buildCloudHeteroContext } from '@/server/services/heterogeneousAgent/cloudHeteroContext';
@@ -64,6 +63,10 @@ import type {
 } from '../types';
 import { selectCodexDeviceDispatch } from './codexDeviceRuntime';
 import { finalizeHeteroDispatchError } from './finalizeHeteroDispatchError';
+import {
+  authorizeHeteroDeviceLaunch,
+  authorizeHeteroSandboxLaunch,
+} from './heteroLaunchAuthorization';
 import { heteroOperationCapabilities } from './heteroOperationCapabilities';
 import type { RunAttachments } from './turnSetup';
 
@@ -757,9 +760,8 @@ export const dispatchHeteroAgent = async (
 
     // lh connect only handles tool_call_request (not agent_run_request),
     // so we use executeToolCall with the runHeteroTask tool instead of dispatchAgentRun.
-    const authorizationError = await resolveDeviceDispatchAuthorizationFailure(
-      deps.db,
-      deps.userId,
+    const authorizationError = await authorizeHeteroDeviceLaunch(
+      deps,
       remoteDeviceId,
       remoteDeviceWorkspaceId,
     );
@@ -1007,9 +1009,8 @@ export const dispatchHeteroAgent = async (
             })
           : undefined;
 
-      const authorizationError = await resolveDeviceDispatchAuthorizationFailure(
-        deps.db,
-        deps.userId,
+      const authorizationError = await authorizeHeteroDeviceLaunch(
+        deps,
         dispatchDeviceId,
         dispatchWorkspaceId,
       );
@@ -1135,8 +1136,7 @@ export const dispatchHeteroAgent = async (
       // the file store for thumbnail echo — would 401 and silently drop.
       // Mint a user-scoped `cli-sandbox` token instead (still `sub: userId`,
       // ownership-gated on heteroIngest/heteroFinish) with a run-length TTL
-      // so it outlives a multi-hour run.
-      const sandboxJwt = await signUserJWT(deps.userId, '4h');
+      const sandboxJwt = await authorizeHeteroSandboxLaunch(deps);
       spawnHeteroSandbox({
         ...heteroParams,
         agentType: heteroType as 'claude-code' | 'codex',

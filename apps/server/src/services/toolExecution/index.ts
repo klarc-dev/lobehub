@@ -23,9 +23,14 @@ import { contentBlocksToString } from '@/server/services/mcp/contentProcessor';
 
 import { DiscoverService } from '../discover';
 import { type MCPService } from '../mcp';
+import { assertWorkspaceExecutionAllowed } from '../workspaceExecutionAuthorization';
 import { type BuiltinToolsExecutor } from './builtin';
 import { classifyToolError, getToolAccessDeniedError } from './errorClassification';
-import { resolveRunWorkspaceId } from './serverRuntimes/resolveWorkspaceScope';
+import {
+  resolveContentWorkspaceId,
+  resolveRunWorkspaceId,
+  resolveTaskWorkspaceId,
+} from './serverRuntimes/resolveWorkspaceScope';
 import { withoutDeviceReplay } from './serverRuntimes/withoutDeviceReplay';
 import {
   type ToolExecutionContext,
@@ -137,6 +142,20 @@ export class ToolExecutionService {
     payload: ChatToolPayload,
     context: ToolExecutionContext,
   ): Promise<ToolExecutionResultResponse> {
+    const contentWorkspaceId = await resolveContentWorkspaceId(context);
+    if (context.taskId && !context.serverDB)
+      throw new Error('Task execution requires a database scope');
+    context = {
+      ...context,
+      workspaceId: context.taskId
+        ? await resolveTaskWorkspaceId(context.serverDB!, context.taskId, contentWorkspaceId)
+        : contentWorkspaceId,
+    };
+    await assertWorkspaceExecutionAllowed({
+      db: context.serverDB,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+    });
     const { identifier, apiName, type } = payload;
 
     log('Executing tool: %s:%s (type: %s)', identifier, apiName, type);
@@ -165,6 +184,11 @@ export class ToolExecutionService {
     // ── End permission gate ───────────────────────────────────────────────
 
     const startTime = Date.now();
+    await assertWorkspaceExecutionAllowed({
+      db: context.serverDB,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+    });
     try {
       const typeStr = type as string;
       let data: ToolExecutionResult;
@@ -334,6 +358,11 @@ export class ToolExecutionService {
       }
 
       // For stdio (in-process) / http/sse types, use standard MCP service
+      await assertWorkspaceExecutionAllowed({
+        db: context.serverDB,
+        userId: context.userId,
+        workspaceId: context.workspaceId,
+      });
       const result = await this.mcpService.callTool({
         argsStr: args,
         clientParams: mcpParams,
@@ -467,6 +496,11 @@ export class ToolExecutionService {
       target.workspaceId ?? 'personal',
     );
 
+    await assertWorkspaceExecutionAllowed({
+      db: context.serverDB,
+      userId: context.userId,
+      workspaceId: context.workspaceId,
+    });
     const result = await deviceGateway.executeMcpCall(
       {
         apiName,

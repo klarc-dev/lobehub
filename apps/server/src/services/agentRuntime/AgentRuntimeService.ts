@@ -103,6 +103,7 @@ import {
 } from '@/server/services/workRegistration';
 
 import { resolveMessageFileUrls } from '../message/resolveMessageFileUrls';
+import { assertWorkspaceExecutionAllowed } from '../workspaceExecutionAuthorization';
 import { isAbortError, throwIfAborted } from './abort';
 import {
   CompletionLifecycle,
@@ -144,6 +145,7 @@ import {
   type StepCompletionReason,
   type SubAgentBridgeParams,
 } from './types';
+import { WorkspaceExecutionGuard } from './WorkspaceExecutionGuard';
 
 if (process.env.VERCEL) {
   // Route debug output to stdout (`console.info`) instead of stderr, which
@@ -574,6 +576,7 @@ export class AgentRuntimeService {
   private serverDB: LobeChatDatabase;
   private userId: string;
   private workspaceId?: string;
+  private workspaceExecutionGuard: WorkspaceExecutionGuard;
   private messageModel: MessageModel;
   // Lazily constructed because MessageService instantiates a FileService
   // which eagerly creates the S3 client and throws when S3 env vars are
@@ -622,6 +625,13 @@ export class AgentRuntimeService {
     const workspaceId = this.workspaceId;
     const includeShareVisitor = options?.includeShareVisitor ?? false;
     this.agentOperationModel = new AgentOperationModel(db, this.userId, workspaceId);
+    this.workspaceExecutionGuard = new WorkspaceExecutionGuard(
+      db,
+      userId,
+      workspaceId,
+      this.coordinator,
+      this.agentOperationModel,
+    );
     this.messageModel = new MessageModel(db, this.userId, workspaceId, undefined, {
       includeShareVisitor,
     });
@@ -1218,6 +1228,11 @@ export class AgentRuntimeService {
    * Create a new Agent operation
    */
   async createOperation(params: OperationCreationParams): Promise<OperationCreationResult> {
+    await assertWorkspaceExecutionAllowed({
+      db: this.serverDB,
+      userId: this.userId,
+      workspaceId: this.workspaceId,
+    });
     const {
       acceptsFileWorks,
       acceptsMemberRuntimeEnd,
@@ -1814,39 +1829,8 @@ export class AgentRuntimeService {
       };
     }
 
-    // Redis keeps the resumable step state, but the durable operation row is
-    // the authority for cancellation/recovery. A queued QStash delivery can
-    // outlive a crashed process and arrive after Goal recovery has atomically
-    // marked that operation interrupted. ACK it without touching the old
-    // topic; otherwise the abandoned attempt can finish concurrently with its
-    // replacement and submit a second Acceptance run.
-    try {
-      const durableOperation = await this.agentOperationModel.findById(operationId);
-      if (
-        durableOperation &&
-        ['done', 'error', 'interrupted', 'abandoned'].includes(durableOperation.status)
-      ) {
-        log(
-          '[%s][%d] Skipping delivery for terminal durable operation (%s)',
-          operationId,
-          stepIndex,
-          durableOperation.status,
-        );
-        return {
-          nextStepScheduled: false,
-          state: {
-            status:
-              durableOperation.status === 'abandoned' ? 'interrupted' : durableOperation.status,
-          },
-          stepResult: null,
-          success: true,
-        };
-      }
-    } catch (error) {
-      // Preserve runtime availability when the durable store has a transient
-      // read failure. The step lock and normal persistence path still apply.
-      log('[%s][%d] Durable operation status check failed: %O', operationId, stepIndex, error);
-    }
+    const terminal = await this.workspaceExecutionGuard.check(operationId);
+    if (terminal) return terminal;
 
     // Watchdog re-check for a parked async-tool wait: re-run the barrier + CAS
     // without claiming the step lock or executing anything. Idempotent — the
@@ -2077,6 +2061,7 @@ export class AgentRuntimeService {
         if (!agentState) {
           throw new Error(`Agent state not found for operation ${operationId}`);
         }
+        this.workspaceExecutionGuard.assertStateScope(agentState);
 
         // A parked approval step is already durable before its generic Review
         // is published. When that final Review write fails, the request returns
@@ -2547,6 +2532,8 @@ export class AgentRuntimeService {
           }
         }
 
+        const denied = await this.workspaceExecutionGuard.checkWorkspace(operationId);
+        if (denied) return denied;
         // Execute step (skipped when force-finishing a parked supervisor op).
         const startAt = Date.now();
         logToolCallPc(operationId, stepIndex, 'post.runtime_step_entered', () => ({
@@ -2556,6 +2543,8 @@ export class AgentRuntimeService {
         let stepResult = forcedFinishState
           ? { events: [], newState: forcedFinishState, nextContext: undefined }
           : await runtime.step(currentState, currentContext);
+        const revoked = await this.workspaceExecutionGuard.checkWorkspace(operationId);
+        if (revoked) return revoked;
 
         // Inner runtime.step() catches model-runtime exceptions and stuffs the
         // raw error into newState.error without re-throwing — so the outer
@@ -3055,6 +3044,8 @@ export class AgentRuntimeService {
         };
       });
     } catch (error) {
+      const revoked = await this.workspaceExecutionGuard.checkWorkspace(operationId);
+      if (revoked) return revoked;
       const isInterventionPersistenceFailure =
         error instanceof CriticalAgentInterventionPersistenceError;
       invokeAgentSpan.recordException(error as Error);
@@ -3435,6 +3426,8 @@ export class AgentRuntimeService {
    */
   async startExecution(params: StartExecutionParams): Promise<StartExecutionResult> {
     const { operationId, context, priority = 'normal', delay = 50 } = params;
+    if (await this.workspaceExecutionGuard.checkWorkspace(operationId))
+      return { operationId, scheduled: false, success: true };
 
     try {
       log('Starting execution for operation %s', operationId);
@@ -3546,6 +3539,7 @@ export class AgentRuntimeService {
       rejectionReason,
       toolMessageId,
     } = params;
+    if (await this.workspaceExecutionGuard.checkWorkspace(operationId)) return {};
 
     try {
       log(
@@ -3636,6 +3630,7 @@ export class AgentRuntimeService {
     },
   ): Promise<boolean> {
     const { parentOperationId } = params;
+    if (await this.workspaceExecutionGuard.checkWorkspace(parentOperationId)) return false;
 
     const state = await this.coordinator.loadAgentState(parentOperationId);
     if (!state) {
@@ -3887,6 +3882,7 @@ export class AgentRuntimeService {
     operationId: string;
   }): Promise<ResumeClientLlmWaitResult> {
     const { llmExecutor, operationId } = params;
+    if (await this.workspaceExecutionGuard.checkWorkspace(operationId)) return { resumed: false };
     const state = await this.coordinator.loadAgentState(operationId);
     if (!state || state.status !== 'waiting_for_client') return { resumed: false };
     if (state.origin?.userId && state.origin.userId !== this.userId) return { resumed: false };

@@ -32,6 +32,7 @@ import {
   logDeviceToolAudit,
 } from '@/server/services/aiAgent/deviceToolAudit';
 import { resolveRunWorkAccessScope } from '@/server/services/workRegistration';
+import { assertWorkspaceExecutionAllowed } from '@/server/services/workspaceExecutionAuthorization';
 
 import type { RuntimeExecutorContext } from '../context';
 import { dispatchClientTool } from '../dispatchClientTool';
@@ -166,6 +167,11 @@ export class ServerToolTransport implements ToolTransport {
 
     try {
       const hookResult = await this.dispatchBeforeToolCall(chatToolPayload, context);
+      await assertWorkspaceExecutionAllowed({
+        db: serverDB,
+        userId,
+        workspaceId: context.state.origin?.workspaceId ?? this.ctx.workspaceId,
+      });
       if (context.abortSignal?.aborted) return this.abortedBeforeLaunch();
       let toolCallMocked = false;
 
@@ -210,6 +216,12 @@ export class ServerToolTransport implements ToolTransport {
         // would start side-effecting work for a cancelled operation.
         if (context.abortSignal?.aborted) return this.abortedBeforeLaunch();
 
+        await assertWorkspaceExecutionAllowed({
+          db: serverDB,
+          userId,
+          workspaceId: context.state.origin?.workspaceId ?? this.ctx.workspaceId,
+        });
+        if (context.abortSignal?.aborted) return this.abortedBeforeLaunch();
         const dispatchResult = await dispatchClientTool(chatToolPayload, {
           agentId: context.state.origin?.agentId,
           assistantMessageId: context.parentMessageId,
@@ -244,8 +256,14 @@ export class ServerToolTransport implements ToolTransport {
 
         log(`[${operationLogId}] Executing tool ${context.toolName} ...`);
         execution = await executeToolWithRetry(
-          () =>
-            toolExecutionService.executeTool(chatToolPayload, {
+          async () => {
+            await assertWorkspaceExecutionAllowed({
+              db: serverDB,
+              userId,
+              workspaceId: context.state.origin?.workspaceId ?? this.ctx.workspaceId,
+            });
+            if (context.abortSignal?.aborted) return { content: '', success: false };
+            return toolExecutionService.executeTool(chatToolPayload, {
               activatedSkills: context.activatedSkills as any,
               activeDeviceId: resolveRunActiveDeviceId(context.state),
               activeDeviceScope: context.state.principal?.actor?.deviceScope,
@@ -314,7 +332,8 @@ export class ServerToolTransport implements ToolTransport {
               userId,
               workingDirectory: context.state.binding?.device?.systemInfo?.workingDirectory,
               workspaceId: context.state.origin?.workspaceId ?? this.ctx.workspaceId,
-            }),
+            });
+          },
           {
             isInterrupted: () => isOperationInterrupted(this.ctx),
             maxRetries: TOOL_MAX_RETRIES,

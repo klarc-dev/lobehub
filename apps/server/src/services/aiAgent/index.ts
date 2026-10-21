@@ -29,7 +29,6 @@ import { AgentShareModel } from '@/database/models/agentShare';
 import { ChatGroupModel } from '@/database/models/chatGroup';
 import { ConnectorModel } from '@/database/models/connector';
 import { ConnectorToolModel } from '@/database/models/connectorTool';
-import { DeviceModel } from '@/database/models/device';
 import { MessageModel } from '@/database/models/message';
 import { PluginModel } from '@/database/models/plugin';
 import { TaskModel } from '@/database/models/task';
@@ -63,6 +62,7 @@ import { ComposioService } from '@/server/services/composio';
 import { MarketService } from '@/server/services/market';
 import { markdownToTxt } from '@/utils/markdownToTxt';
 
+import { assertWorkspaceExecutionAllowed } from '../workspaceExecutionAuthorization';
 import { createGraphAwareAgentFactory } from './helpers/agentFactory';
 import {
   createGroupActionMemberBridgeHook,
@@ -84,6 +84,7 @@ import { resolveRunAgentConfig } from './pipeline/resolveRunAgentConfig';
 import { traceSendStage } from './pipeline/sendTracing';
 import { startOperation } from './pipeline/startOperation';
 import { resolveNewTopicSnapshot, setupTurn } from './pipeline/turnSetup';
+import { resolveDeviceWorkspaceId } from './resolveDeviceWorkspaceId';
 import { createRunFacts, type RunFacts } from './runFacts';
 import { applyShareGateToAgentConfig } from './shareGate';
 import { resolveAgentSenderFromOperation } from './sourceAttribution';
@@ -275,22 +276,11 @@ export class AiAgentService {
     return task?.id;
   }
 
-  /**
-   * If `deviceId` is a device enrolled into the caller's current workspace,
-   * return that workspaceId so device-gateway calls route to the
-   * `workspace:<id>` principal. Returns undefined for a personal device (or no
-   * workspace context), keeping the personal path byte-identical.
-   */
+  /** Workspace device addressing, independent of the run's content scope. */
   private async resolveDeviceWorkspaceId(
     deviceId: string | undefined,
   ): Promise<string | undefined> {
-    if (!deviceId || !this.workspaceId) return undefined;
-    const row = await new DeviceModel(
-      this.db,
-      this.userId,
-      this.workspaceId,
-    ).findWorkspaceDeviceById(deviceId);
-    return row ? this.workspaceId : undefined;
+    return resolveDeviceWorkspaceId(this.db, this.userId, this.workspaceId, deviceId);
   }
 
   /**
@@ -563,6 +553,11 @@ export class AiAgentService {
    *   → AgentRuntimeService.createOperation(...)
    */
   async execAgent(inputParams: InternalExecAgentParams): Promise<ExecAgentResult> {
+    await assertWorkspaceExecutionAllowed({
+      db: this.db,
+      userId: this.userId,
+      workspaceId: this.workspaceId,
+    });
     // An approval on a group member's tool continues that member, not the
     // conversation's supervisor (see `resolveGroupMemberApprovalContinuation`).
     const memberContinuation = await resolveGroupMemberApprovalContinuation(
@@ -1322,6 +1317,11 @@ export class AiAgentService {
     };
 
     if (isHeteroAgent) {
+      await assertWorkspaceExecutionAllowed({
+        db: this.db,
+        userId: this.userId,
+        workspaceId: this.workspaceId,
+      });
       return dispatchHeteroAgent(
         {
           bindTopicWorkingDirectory: (p) => this.bindTopicWorkingDirectory(p),
