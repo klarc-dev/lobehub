@@ -1,7 +1,6 @@
 'use client';
 
-import { Button, Flexbox, Text } from '@lobehub/ui';
-import { Select } from '@lobehub/ui/base-ui';
+import { Button, Flexbox, Select, Text } from '@lobehub/ui';
 import { useTranslation } from 'react-i18next';
 
 import { useActiveWorkspace } from '@/business/client/hooks/useActiveWorkspace';

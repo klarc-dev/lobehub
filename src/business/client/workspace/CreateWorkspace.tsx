@@ -5,8 +5,7 @@ import {
   WORKSPACE_SLUG_MAX,
   WORKSPACE_SLUG_MIN,
 } from '@lobechat/const';
-import { Button, Flexbox, Input, Text } from '@lobehub/ui';
-import { createModal, useModalContext } from '@lobehub/ui/base-ui';
+import { Button, createModal, Flexbox, Input, Text, useModalContext } from '@lobehub/ui';
 import { t } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';

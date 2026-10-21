@@ -1,7 +1,6 @@
 'use client';
 
-import { Avatar, Button, Flexbox, Input, Tag, Text } from '@lobehub/ui';
-import { Select } from '@lobehub/ui/base-ui';
+import { Avatar, Button, Flexbox, Input, Select, Tag, Text } from '@lobehub/ui';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
