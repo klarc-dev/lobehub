@@ -1,12 +1,23 @@
 import { isLocalOrPrivateUrl } from '@lobechat/utils';
 
 import { ConnectorMcpConnectionType, ConnectorToolPermission } from '@/database/schemas';
+import type { LobeChatDatabase } from '@/database/type';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { mcpService } from '@/server/services/mcp';
+import {
+  assertWorkspaceExecutionAllowed,
+  WorkspaceExecutionDeniedError,
+} from '@/server/services/workspaceExecutionAuthorization';
 
 import { buildLastSyncedAtMap, scheduleStaleConnectorToolsRefresh } from './refresh';
 import { buildConnectorMcpParams, type ConnectorToolSyncContext } from './sync';
 import { ensureFreshConnectorToken } from './tokens';
+
+interface ConnectorToolExecutionContext extends ConnectorToolSyncContext {
+  serverDB?: LobeChatDatabase;
+  userId?: string;
+  workspaceId?: string | null;
+}
 
 export type ConnectorToolCallErrorCode = 'NOT_FOUND' | 'FORBIDDEN' | 'BAD_REQUEST';
 
@@ -35,7 +46,7 @@ export class ConnectorToolCallError extends Error {
  */
 export const callConnectorToolById = async (
   params: { args?: string; identifier: string; toolName: string },
-  ctx: ConnectorToolSyncContext,
+  ctx: ConnectorToolExecutionContext,
 ): Promise<unknown> => {
   const [connector] = await ctx.connectorModel.queryByIdentifiers([params.identifier]);
   if (!connector) {
@@ -72,6 +83,25 @@ export const callConnectorToolById = async (
       `Tool '${params.toolName}' requires approval through the agent runtime and cannot be called directly`,
     );
   }
+
+  const assertExecutionAllowed = async () => {
+    try {
+      await assertWorkspaceExecutionAllowed({
+        db: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: connector.workspaceId ?? ctx.workspaceId,
+      });
+    } catch (error) {
+      if (error instanceof WorkspaceExecutionDeniedError) {
+        throw new ConnectorToolCallError('FORBIDDEN', error.message);
+      }
+      throw error;
+    }
+  };
+
+  // Recheck live membership before scheduling any upstream work. Entry
+  // middleware can have run before membership was revoked.
+  await assertExecutionAllowed();
 
   // Keep the tool list fresh through normal use: if it hasn't been synced in a
   // while, refresh it from the upstream MCP server in the background so the user
@@ -113,6 +143,9 @@ export const callConnectorToolById = async (
   }
 
   const fresh = await ensureFreshConnectorToken(connector, ctx.connectorModel);
+
+  // Token refresh yields to I/O, so membership may change before tool launch.
+  await assertExecutionAllowed();
 
   return mcpService.callTool({
     argsStr: params.args ?? '{}',

@@ -59,7 +59,7 @@ beforeAll(async () => {
     name: 'Transport regression',
     oidcConfig: null,
     userId: 'owner',
-    workspaceId: 'workspace',
+    workspaceId: null,
   } as DecryptedConnector;
 });
 

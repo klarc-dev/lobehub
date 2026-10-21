@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getActiveWorkspaceMembershipRole } from '@/database/models/workspace';
 import { ConnectorToolPermission } from '@/database/schemas';
 import { deviceGateway } from '@/server/services/deviceGateway';
 import { mcpService } from '@/server/services/mcp';
@@ -8,6 +9,7 @@ import { callConnectorToolById } from './exec';
 import { scheduleStaleConnectorToolsRefresh } from './refresh';
 import { ensureFreshConnectorToken } from './tokens';
 
+vi.mock('@/database/models/workspace', () => ({ getActiveWorkspaceMembershipRole: vi.fn() }));
 vi.mock('@/server/services/mcp', () => ({ mcpService: { callTool: vi.fn() } }));
 vi.mock('@/server/services/deviceGateway', () => ({ deviceGateway: { isConfigured: false } }));
 vi.mock('./tokens', () => ({ ensureFreshConnectorToken: vi.fn(async (c) => c) }));
@@ -44,6 +46,7 @@ const makeCtx = (connectors: any[], tools: any[]) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue('member');
   vi.mocked(ensureFreshConnectorToken).mockImplementation(async (c: any) => c);
   (deviceGateway as any).isConfigured = false;
 });
@@ -144,6 +147,78 @@ describe('callConnectorToolById', () => {
         toolName: 'do_thing',
       }),
     );
+  });
+
+  it.each([null, 'guest', 'viewer'])(
+    'rejects workspace execution for current role %s before upstream work',
+    async (role) => {
+      vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue(role);
+      const ctx = {
+        ...makeCtx([{ ...connector, workspaceId: 'workspace' }], [tool()]),
+        serverDB: {},
+        userId: 'member',
+        workspaceId: 'workspace',
+      };
+
+      await expect(
+        callConnectorToolById({ identifier: 'my-conn', toolName: 'do_thing' }, ctx),
+      ).rejects.toHaveProperty('code', 'FORBIDDEN');
+      expect(ensureFreshConnectorToken).not.toHaveBeenCalled();
+      expect(scheduleStaleConnectorToolsRefresh).not.toHaveBeenCalled();
+      expect(mcpService.callTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['member', 'admin', 'owner'])(
+    'allows current workspace %s to execute auto tools',
+    async (role) => {
+      vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue(role);
+      vi.mocked(mcpService.callTool).mockResolvedValue({ success: true });
+      const db = {};
+      const ctx = {
+        ...makeCtx([{ ...connector, userId: 'creator', workspaceId: 'workspace' }], [tool()]),
+        serverDB: db,
+        userId: 'calling-member',
+        workspaceId: 'workspace',
+      };
+
+      await expect(
+        callConnectorToolById({ identifier: 'my-conn', toolName: 'do_thing' }, ctx),
+      ).resolves.toEqual({ success: true });
+      expect(getActiveWorkspaceMembershipRole).toHaveBeenCalledTimes(2);
+      expect(getActiveWorkspaceMembershipRole).toHaveBeenCalledWith(db, {
+        userId: 'calling-member',
+        workspaceId: 'workspace',
+      });
+    },
+  );
+
+  it('rejects shared execution when trusted auth context is absent', async () => {
+    const ctx = makeCtx([{ ...connector, workspaceId: 'workspace' }], [tool()]);
+    await expect(
+      callConnectorToolById({ identifier: 'my-conn', toolName: 'do_thing' }, ctx),
+    ).rejects.toHaveProperty('code', 'FORBIDDEN');
+    expect(ensureFreshConnectorToken).not.toHaveBeenCalled();
+    expect(mcpService.callTool).not.toHaveBeenCalled();
+  });
+
+  it('rechecks membership after OAuth refresh before launching the MCP tool', async () => {
+    const ctx = {
+      ...makeCtx([{ ...connector, workspaceId: 'workspace' }], [tool()]),
+      serverDB: {},
+      userId: 'member',
+      workspaceId: 'workspace',
+    };
+    vi.mocked(ensureFreshConnectorToken).mockImplementationOnce(async (c) => {
+      vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue(null);
+      return c;
+    });
+
+    await expect(
+      callConnectorToolById({ identifier: 'my-conn', toolName: 'do_thing' }, ctx),
+    ).rejects.toHaveProperty('code', 'FORBIDDEN');
+    expect(ensureFreshConnectorToken).toHaveBeenCalledTimes(1);
+    expect(mcpService.callTool).not.toHaveBeenCalled();
   });
 
   it('uses the refreshed token when the connector token was refreshed', async () => {
