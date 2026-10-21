@@ -3,162 +3,124 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { canManageAcceptance, filterManageableAcceptances } from './acceptanceWriteScope';
 
-const getMember = vi.hoisted(() => vi.fn());
-const getRolesInWorkspaces = vi.hoisted(() => vi.fn());
-
-vi.mock('@/database/models/workspaceMember', () => ({
-  WorkspaceMemberModel: class {
-    getMember = getMember;
-    getRolesInWorkspaces = getRolesInWorkspaces;
-  },
+const membershipRows = vi.fn();
+const limit = vi.fn();
+const where = vi.fn(() => ({ limit }));
+const select = vi.fn(() => ({
+  from: vi.fn(() => ({
+    innerJoin: vi.fn(() => ({ where })),
+  })),
 }));
-
-const db = {} as never;
-const row = (userId: string, workspaceId: string | null) =>
-  ({ userId, workspaceId }) as { userId: string; workspaceId: string | null };
+const db = { select } as any;
+const ctx = { serverDB: db, userId: 'me' };
+const row = (userId: string, workspaceId: string | null) => ({ userId, workspaceId });
 
 beforeEach(() => {
-  getMember.mockReset();
-  getRolesInWorkspaces.mockReset();
+  vi.clearAllMocks();
+  limit.mockReset().mockResolvedValue([]);
+  membershipRows.mockReset().mockResolvedValue([]);
+  where.mockImplementation(() => ({ limit }) as any);
 });
 
 describe('canManageAcceptance', () => {
-  it('lets the personal creator write without a membership lookup', async () => {
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('me', null)),
-    ).resolves.toBe(true);
-    expect(getMember).not.toHaveBeenCalled();
+  it('allows personal creators without querying membership', async () => {
+    await expect(canManageAcceptance(ctx, row('me', null))).resolves.toBe(true);
+    await expect(canManageAcceptance(ctx, row('other', null))).resolves.toBe(false);
+    expect(select).not.toHaveBeenCalled();
   });
 
-  it.each([undefined, { role: 'viewer' }, { role: 'unknown' }])(
-    'denies revoked or read-only workspace creators: %s',
-    async (member) => {
-      getMember.mockResolvedValue(member);
-      await expect(
-        canManageAcceptance({ serverDB: db, userId: 'me' }, row('me', 'ws_a')),
-      ).resolves.toBe(false);
-      expect(getMember).toHaveBeenCalledWith('ws_a', 'me');
+  it.each([null, 'viewer', 'unknown'])(
+    'denies removed or read-only workspace creators: %s',
+    async (role) => {
+      limit.mockResolvedValue(role ? [{ role, primaryOwnerId: 'other' }] : []);
+      await expect(canManageAcceptance(ctx, row('me', 'ws'))).resolves.toBe(false);
     },
   );
 
   it.each(['member', 'admin', 'owner'])('allows the active %s creator', async (role) => {
-    getMember.mockResolvedValue({ role });
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('me', 'ws_a')),
-    ).resolves.toBe(true);
+    limit.mockResolvedValue([{ role, primaryOwnerId: 'me' }]);
+    await expect(canManageAcceptance(ctx, row('me', 'ws'))).resolves.toBe(true);
   });
 
-  it('fails closed on a workspace membership lookup error', async () => {
-    getMember.mockRejectedValue(new Error('unavailable'));
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('me', 'ws_a')),
-    ).rejects.toThrow('unavailable');
+  it('allows the primary owner to write another creator record', async () => {
+    limit.mockResolvedValue([{ role: 'owner', primaryOwnerId: 'me' }]);
+    await expect(canManageAcceptance(ctx, row('other', 'ws'))).resolves.toBe(true);
   });
 
-  it("lets an owner of the acceptance's OWN workspace write a teammate's delivery", async () => {
-    getMember.mockResolvedValue({ role: 'owner' });
-
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('teammate', 'ws_a')),
-    ).resolves.toBe(true);
-    // The row's workspace, never the caller's active one — the caller is
-    // routinely standing somewhere else, or nowhere.
-    expect(getMember).toHaveBeenCalledWith('ws_a', 'me');
+  it.each(['member', 'admin'])('denies %s edits to another creator record', async (role) => {
+    limit.mockResolvedValue([{ role, primaryOwnerId: 'other' }]);
+    await expect(canManageAcceptance(ctx, row('other', 'ws'))).resolves.toBe(false);
   });
 
-  it('does not let an ordinary member write a teammate delivery', async () => {
-    getMember.mockResolvedValue({ role: 'member' });
-
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('teammate', 'ws_a')),
-    ).resolves.toBe(false);
+  it('demotes a legacy non-primary owner before cross-creator authorization', async () => {
+    limit.mockResolvedValue([{ role: 'owner', primaryOwnerId: 'primary-owner' }]);
+    await expect(canManageAcceptance(ctx, row('other', 'ws'))).resolves.toBe(false);
+    await expect(canManageAcceptance(ctx, row('me', 'ws'))).resolves.toBe(true);
   });
 
-  it('does not let a non-member write it', async () => {
-    getMember.mockResolvedValue(undefined);
-
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('teammate', 'ws_a')),
-    ).resolves.toBe(false);
+  it('fails closed on membership errors', async () => {
+    limit.mockRejectedValue(new Error('unavailable'));
+    await expect(canManageAcceptance(ctx, row('me', 'ws'))).rejects.toThrow('unavailable');
   });
 
-  it('has no owner path for a personal acceptance — only its creator writes it', async () => {
-    await expect(
-      canManageAcceptance({ serverDB: db, userId: 'me' }, row('teammate', null)),
-    ).resolves.toBe(false);
-    expect(getMember).not.toHaveBeenCalled();
-  });
-
-  it('refuses an anonymous caller', async () => {
-    await expect(canManageAcceptance({ serverDB: db }, row('teammate', 'ws_a'))).resolves.toBe(
-      false,
-    );
-    expect(getMember).not.toHaveBeenCalled();
+  it('denies anonymous callers', async () => {
+    await expect(canManageAcceptance({ serverDB: db }, row('me', 'ws'))).resolves.toBe(false);
+    expect(select).not.toHaveBeenCalled();
   });
 });
 
 describe('filterManageableAcceptances', () => {
-  it('applies the same rule as the single-row check', async () => {
-    getRolesInWorkspaces.mockResolvedValue(
-      new Map([
-        ['ws_owned', 'owner'],
-        ['ws_member', 'member'],
-      ]),
-    );
+  beforeEach(() => {
+    where.mockImplementation(membershipRows as any);
+  });
 
+  it('reads normalized membership for all resource workspaces in one batch', async () => {
+    membershipRows.mockResolvedValue([
+      { workspaceId: 'owned', role: 'owner', primaryOwnerId: 'me' },
+      { workspaceId: 'member', role: 'member', primaryOwnerId: 'other' },
+      { workspaceId: 'legacy', role: 'owner', primaryOwnerId: 'other' },
+      { workspaceId: 'viewer', role: 'viewer', primaryOwnerId: 'other' },
+    ]);
     const rows = [
       row('me', null),
-      row('me', 'ws_member'),
-      row('teammate', 'ws_owned'),
-      row('teammate', 'ws_member'),
-      row('teammate', null),
+      row('me', 'member'),
+      row('other', 'owned'),
+      row('other', 'member'),
+      row('other', 'legacy'),
+      row('me', 'legacy'),
+      row('me', 'removed'),
+      row('me', 'viewer'),
+      row('other', null),
     ];
-    await expect(
-      filterManageableAcceptances({ serverDB: db, userId: 'me' }, rows),
-    ).resolves.toEqual([row('me', null), row('me', 'ws_member'), row('teammate', 'ws_owned')]);
+    await expect(filterManageableAcceptances(ctx, rows)).resolves.toEqual([
+      row('me', null),
+      row('me', 'member'),
+      row('other', 'owned'),
+      row('me', 'legacy'),
+    ]);
+    expect(select).toHaveBeenCalledOnce();
+    expect(where).toHaveBeenCalledOnce();
+    expect(limit).not.toHaveBeenCalled();
   });
 
-  it('reads roles for every distinct foreign workspace in one query', async () => {
-    getRolesInWorkspaces.mockResolvedValue(
-      new Map([
-        ['ws_a', 'owner'],
-        ['ws_b', 'owner'],
-        ['ws_c', 'member'],
-      ]),
+  it('does not query for personal-only records', async () => {
+    await expect(filterManageableAcceptances(ctx, [row('me', null)])).resolves.toEqual([
+      row('me', null),
+    ]);
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on batch membership lookup errors', async () => {
+    membershipRows.mockRejectedValue(new Error('unavailable'));
+    await expect(filterManageableAcceptances(ctx, [row('me', 'ws')])).rejects.toThrow(
+      'unavailable',
     );
-
-    const rows = [
-      row('teammate', 'ws_a'),
-      row('teammate', 'ws_a'),
-      row('teammate', 'ws_a'),
-      row('teammate', 'ws_b'),
-      // Creator workspace rows also require a current role lookup.
-      row('me', 'ws_c'),
-      row('teammate', null),
-    ];
-    await expect(
-      filterManageableAcceptances({ serverDB: db, userId: 'me' }, rows),
-    ).resolves.toHaveLength(5);
-    expect(getRolesInWorkspaces).toHaveBeenCalledOnce();
-    expect(getRolesInWorkspaces).toHaveBeenCalledWith(['ws_a', 'ws_b', 'ws_c'], 'me');
-    expect(getMember).not.toHaveBeenCalled();
   });
 
-  it('filters removed and viewer creators in batch just like single-row authorization', async () => {
-    getRolesInWorkspaces.mockResolvedValue(new Map([['ws_viewer', 'viewer']]));
-    await expect(
-      filterManageableAcceptances({ serverDB: db, userId: 'me' }, [
-        row('me', 'ws_removed'),
-        row('me', 'ws_viewer'),
-        row('me', null),
-      ]),
-    ).resolves.toEqual([row('me', null)]);
-  });
-
-  it('returns nothing for an anonymous caller', async () => {
-    await expect(filterManageableAcceptances({ serverDB: db }, [row('me', null)])).resolves.toEqual(
+  it('denies anonymous callers', async () => {
+    await expect(filterManageableAcceptances({ serverDB: db }, [row('me', 'ws')])).resolves.toEqual(
       [],
     );
-    expect(getRolesInWorkspaces).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
   });
 });

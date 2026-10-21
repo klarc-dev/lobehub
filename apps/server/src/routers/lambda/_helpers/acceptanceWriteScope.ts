@@ -1,4 +1,7 @@
-import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+
+import { getActiveWorkspaceMembershipRole } from '@/database/models/workspace';
+import { workspaceMembers, workspaces } from '@/database/schemas';
 import type { AcceptanceItem } from '@/database/schemas/verify';
 import type { LobeChatDatabase } from '@/database/type';
 
@@ -22,13 +25,13 @@ export async function canManageAcceptance(
   if (!ctx.userId) return false;
   if (!acceptance.workspaceId) return ctx.userId === acceptance.userId;
 
-  const member = await new WorkspaceMemberModel(ctx.serverDB, ctx.userId).getMember(
-    acceptance.workspaceId,
-    ctx.userId,
-  );
+  const role = await getActiveWorkspaceMembershipRole(ctx.serverDB, {
+    userId: ctx.userId,
+    workspaceId: acceptance.workspaceId,
+  });
   return (
-    member?.role === 'owner' ||
-    (ctx.userId === acceptance.userId && !!member && ['member', 'admin'].includes(member.role))
+    role === 'owner' ||
+    (ctx.userId === acceptance.userId && (role === 'member' || role === 'admin'))
   );
 }
 
@@ -47,9 +50,28 @@ export async function filterManageableAcceptances<
   const workspaceIds = [
     ...new Set(rows.flatMap((row) => (row.workspaceId ? [row.workspaceId] : []))),
   ];
-  const roles = await new WorkspaceMemberModel(ctx.serverDB, userId).getRolesInWorkspaces(
-    workspaceIds,
-    userId,
+  const memberships = workspaceIds.length
+    ? await ctx.serverDB
+        .select({
+          primaryOwnerId: workspaces.primaryOwnerId,
+          role: workspaceMembers.role,
+          workspaceId: workspaceMembers.workspaceId,
+        })
+        .from(workspaceMembers)
+        .innerJoin(workspaces, eq(workspaces.id, workspaceMembers.workspaceId))
+        .where(
+          and(
+            inArray(workspaceMembers.workspaceId, workspaceIds),
+            eq(workspaceMembers.userId, userId),
+            isNull(workspaceMembers.deletedAt),
+          ),
+        )
+    : [];
+  const roles = new Map(
+    memberships.map((member) => [
+      member.workspaceId,
+      member.role === 'owner' && member.primaryOwnerId !== userId ? 'admin' : member.role,
+    ]),
   );
 
   return rows.filter((row) => {
