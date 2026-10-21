@@ -1,3 +1,7 @@
-export const getActiveWorkspaceId = (): string | null => null;
+import { useWorkspaceStore, workspaceSelectors } from '../workspace/store';
 
-export const useActiveWorkspaceId = (): string | null => null;
+export const getActiveWorkspaceId = (): string | null =>
+  workspaceSelectors.active(useWorkspaceStore.getState())?.id ?? null;
+
+export const useActiveWorkspaceId = (): string | null =>
+  useWorkspaceStore(workspaceSelectors.activeId);

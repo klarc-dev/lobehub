@@ -1,9 +1,9 @@
+import { workspaceActions } from '../workspace/store';
+
 export interface SwitchWorkspaceActions {
   switchToPersonal: () => Promise<void>;
   switchWorkspace: (id: string) => Promise<void>;
 }
-
-const noop = async (): Promise<void> => {};
 
 /**
  * Workspace switch invoked from imperative call sites that represent an
@@ -12,8 +12,8 @@ const noop = async (): Promise<void> => {};
  * to the user-intent semantics.
  */
 export const useSwitchWorkspace = (): SwitchWorkspaceActions => ({
-  switchToPersonal: noop,
-  switchWorkspace: noop,
+  switchToPersonal: workspaceActions.switchToPersonal,
+  switchWorkspace: workspaceActions.switchWorkspace,
 });
 
 /**
@@ -23,6 +23,6 @@ export const useSwitchWorkspace = (): SwitchWorkspaceActions => ({
  * user-intent side effects.
  */
 export const useSilentSwitchWorkspace = (): SwitchWorkspaceActions => ({
-  switchToPersonal: noop,
-  switchWorkspace: noop,
+  switchToPersonal: workspaceActions.reconcilePersonal,
+  switchWorkspace: workspaceActions.reconcileWorkspace,
 });

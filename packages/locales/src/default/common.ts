@@ -1,4 +1,22 @@
 export default {
+  'selfHostedWorkspace.title': 'Workspaces',
+  'selfHostedWorkspace.personal': 'Personal workspace',
+  'selfHostedWorkspace.create': 'Create workspace',
+  'selfHostedWorkspace.name': 'Workspace name',
+  'selfHostedWorkspace.slug': 'Workspace URL slug',
+  'selfHostedWorkspace.privacy':
+    'Personal data stays personal. Only resources created or explicitly shared in this workspace are available to its members.',
+  'selfHostedWorkspace.members': 'Workspace members',
+  'selfHostedWorkspace.addMember': 'Add registered member',
+  'selfHostedWorkspace.email': 'Verified account email',
+  'selfHostedWorkspace.readOnly': 'Only workspace owners and admins can change these settings.',
+  'selfHostedWorkspace.noMembers': 'No active members in this workspace.',
+  'selfHostedWorkspace.registeredOnly':
+    'Add an existing user with a verified email. No invitation email will be sent.',
+  'selfHostedWorkspace.role.owner': 'Owner',
+  'selfHostedWorkspace.role.admin': 'Admin',
+  'selfHostedWorkspace.role.member': 'Member',
+  'selfHostedWorkspace.role.viewer': 'Viewer',
   'about': 'About',
   'advanceSettings': 'Advanced Settings',
   'alert.cloud.action': 'Try now',

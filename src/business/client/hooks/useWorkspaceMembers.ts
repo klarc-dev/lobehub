@@ -1,5 +1,7 @@
 import type { WorkspaceMemberItem } from '@lobechat/database/schemas';
 
+import { useWorkspaceStore, workspaceSelectors } from '../workspace/store';
+
 export interface WorkspaceMemberUserProfile {
   avatar?: string | null;
   email?: string | null;
@@ -16,10 +18,12 @@ export type WorkspaceMemberWithProfile = WorkspaceMemberItem & {
   user?: WorkspaceMemberUserProfile | null;
 };
 
-export const useWorkspaceMembers = (): WorkspaceMemberWithProfile[] => [];
+export const useWorkspaceMembers = (): WorkspaceMemberWithProfile[] =>
+  useWorkspaceStore(workspaceSelectors.activeMembers);
 
 /**
  * Non-hook snapshot of the same list, for imperative callers such as tool
  * executors. Empty in OSS; cloud reads the workspace store.
  */
-export const getWorkspaceMembers = (): WorkspaceMemberWithProfile[] => [];
+export const getWorkspaceMembers = (): WorkspaceMemberWithProfile[] =>
+  workspaceSelectors.activeMembers(useWorkspaceStore.getState());

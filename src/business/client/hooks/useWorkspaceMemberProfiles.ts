@@ -9,12 +9,25 @@
  * A workspace topic already carries `userId` (its creator / triggerer); this is
  * the client-side lookup that turns that id into a face and a name.
  */
+import { useMemo } from 'react';
+
+import { useWorkspaceMembers } from './useWorkspaceMembers';
+
 export interface WorkspaceMemberProfile {
   avatar?: string | null;
   fullName?: string | null;
   username?: string | null;
 }
 
-const EMPTY: ReadonlyMap<string, WorkspaceMemberProfile> = new Map();
-
-export const useWorkspaceMemberProfiles = (): ReadonlyMap<string, WorkspaceMemberProfile> => EMPTY;
+export const useWorkspaceMemberProfiles = (): ReadonlyMap<string, WorkspaceMemberProfile> => {
+  const members = useWorkspaceMembers();
+  return useMemo(
+    () =>
+      new Map(
+        members
+          .filter((member) => !member.deletedAt)
+          .map((member) => [member.userId, member.user ?? {}]),
+      ),
+    [members],
+  );
+};

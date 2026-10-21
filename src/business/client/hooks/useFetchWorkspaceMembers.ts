@@ -1,8 +1,8 @@
+import { useFetchMembers } from '../workspace/useFetchWorkspaces';
+
 export interface FetchWorkspaceMembersOptions {
   includeDeleted?: boolean;
 }
 
-export const useFetchWorkspaceMembers = (_options: FetchWorkspaceMembersOptions = {}) => ({
-  data: [],
-  isLoading: false,
-});
+export const useFetchWorkspaceMembers = (options: FetchWorkspaceMembersOptions = {}) =>
+  useFetchMembers(options.includeDeleted);
