@@ -7,8 +7,14 @@ import {
   EvalEvaluationModel,
   EvaluationRecordModel,
 } from '@/database/models/ragEval';
+import { getActiveWorkspaceMembershipRole } from '@/database/models/workspace';
+import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 
 import { ragEvalRouter } from '../ragEval';
+
+vi.mock('@/database/models/workspace', () => ({
+  getActiveWorkspaceMembershipRole: vi.fn(),
+}));
 
 vi.mock('@/database/models/chunk', () => ({
   ChunkModel: vi.fn(function () {
@@ -76,6 +82,36 @@ describe('ragEvalRouter.runRecordEvaluation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getActiveWorkspaceMembershipRole).mockReset();
+    vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue('member');
+  });
+
+  it.each([null, 'viewer', 'unknown'])(
+    'blocks evaluation execution for inactive or non-writing role %s',
+    async (role) => {
+      vi.mocked(getActiveWorkspaceMembershipRole).mockResolvedValue(role as any);
+      const caller = ragEvalRouter.createCaller({ serverDB, userId } as any);
+      await expect(caller.runRecordEvaluation({ evalRecordId: 'eval-record-1' })).rejects.toThrow(
+        'Active workspace Member, Admin or Owner membership required for execution',
+      );
+      expect(getActiveWorkspaceMembershipRole).toHaveBeenCalledWith(serverDB, {
+        userId,
+        workspaceId: 'workspace-1',
+      });
+      expect(EvaluationRecordModel).not.toHaveBeenCalledWith(serverDB, userId, 'workspace-1');
+      expect(initModelRuntimeFromDB).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not swallow membership lookup failures', async () => {
+    vi.mocked(getActiveWorkspaceMembershipRole).mockRejectedValue(
+      new Error('membership unavailable'),
+    );
+    const caller = ragEvalRouter.createCaller({ serverDB, userId } as any);
+    await expect(caller.runRecordEvaluation({ evalRecordId: 'eval-record-1' })).rejects.toThrow(
+      'membership unavailable',
+    );
+    expect(initModelRuntimeFromDB).not.toHaveBeenCalled();
   });
 
   it('resolves workspaceId from the evaluation record before reading scoped models', async () => {

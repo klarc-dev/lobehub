@@ -19,6 +19,7 @@ import { evaluationRecords } from '@/database/schemas';
 import { asyncAuthedProcedure, asyncRouter as router } from '@/libs/trpc/async';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 import { ChunkService } from '@/server/services/chunk';
+import { assertWorkspaceExecutionAllowed } from '@/server/services/workspaceExecutionAuthorization';
 import { AsyncTaskError } from '@/types/asyncTask';
 
 const ragEvalProcedure = asyncAuthedProcedure.use(async (opts) => {
@@ -54,6 +55,11 @@ export const ragEvalRouter = router({
         .where(eq(evaluationRecords.id, input.evalRecordId))
         .limit(1);
       const wsId = rawRow?.workspaceId ?? undefined;
+      await assertWorkspaceExecutionAllowed({
+        db: ctx.serverDB,
+        userId: ctx.userId,
+        workspaceId: wsId,
+      });
       const evalRecordModel = new EvaluationRecordModel(ctx.serverDB, ctx.userId, wsId);
       const evaluationModel = new EvalEvaluationModel(ctx.serverDB, ctx.userId, wsId);
       const datasetRecordModel = new EvalDatasetRecordModel(ctx.serverDB, ctx.userId, wsId);
