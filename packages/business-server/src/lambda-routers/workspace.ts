@@ -12,12 +12,17 @@ import {
   wsCompatProcedure,
   wsProcedure,
 } from '@/business/server/trpc-middlewares/workspaceAuth';
+import { getServerDB } from '@/database/core/db-adaptor';
+import { WorkspaceModel } from '@/database/models/workspace';
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 
-/**
- * A workspace row as the workspace picker sees it: the stored record plus the
- * caller's membership role and the plan tag cloud derives from subscriptions.
- */
+import {
+  assertWorkspaceAccess,
+  ensureTrustedWorkspaceMembership,
+  getWorkspaceStatistics,
+  provisionTrustedWorkspaceMembers,
+} from '../workspace/selfHosted';
+
 export interface WorkspaceMembershipSummary extends WorkspaceItem {
   lockedOut?: boolean;
   plan?: string;
@@ -31,46 +36,39 @@ export interface WorkspaceStatistics {
   topics: number;
 }
 
-// Same shape cloud enforces, so a slug the CLI or UI gets past this stub is
-// only ever rejected for the reservations cloud adds on top.
 const workspaceSlugSchema = z
   .string()
   .min(WORKSPACE_SLUG_MIN)
   .max(WORKSPACE_SLUG_MAX)
   .refine(isWorkspaceSlugFormatValid, { message: 'invalid-slug' });
-
 const workspaceStatisticsInput = z
   .object({ todayStartAt: z.string().datetime().optional() })
   .optional();
 
-const cloudOnly = (feature: string): never => {
-  throw new TRPCError({
-    code: 'NOT_IMPLEMENTED',
-    message: `${feature} is a cloud-only feature.`,
-  });
-};
-
-// Cloud overrides this at the same path with the real workspaceRouter backed by cloudDB.
-// Only the procedures consumed by submodule (open-source) UI and by the CLI are declared
-// here as typed no-op stubs so the contract type-checks; cloud supplies the real
-// implementations. Keep the procedure builders and input schemas aligned with
-// `apps/server/src/routers/lambda/workspace.ts` in the cloud repo — the point of a stub
-// is to represent that contract, so a looser gate here is a real runtime difference.
 export const workspaceRouter = router({
   checkSlugAvailable: authedProcedure
     .input(z.object({ slug: z.string().min(WORKSPACE_SLUG_MIN).max(WORKSPACE_SLUG_MAX) }))
-    .query((): { available: boolean } => ({ available: false })),
+    .query(async ({ ctx, input }) => ({
+      available:
+        isWorkspaceSlugFormatValid(input.slug) &&
+        !(await new WorkspaceModel(await getServerDB(), ctx.userId).findBySlug(input.slug)),
+    })),
 
   create: authedProcedure
     .input(
       z.object({
         avatar: z.string().optional(),
         description: z.string().max(1000).optional(),
-        name: z.string().min(1).max(255),
+        name: z.string().trim().min(1).max(255),
         slug: workspaceSlugSchema,
       }),
     )
-    .mutation(async (): Promise<WorkspaceItem> => cloudOnly('Workspace creation')),
+    .mutation(async ({ ctx, input }): Promise<WorkspaceItem> => {
+      const model = new WorkspaceModel(await getServerDB(), ctx.userId);
+      if (await model.findBySlug(input.slug))
+        throw new TRPCError({ code: 'CONFLICT', message: 'Workspace slug is already in use' });
+      return model.create(input);
+    }),
 
   ensureMarketOrganization: authedProcedure
     .input(z.object({ autoProvision: z.boolean().optional() }).optional())
@@ -81,32 +79,83 @@ export const workspaceRouter = router({
       });
     }),
 
-  // `wsCompatProcedure` here, unlike cloud's `wsProcedure`, because open-source
-  // callers (`buildAppUrl`) reach for it before they know whether a workspace
-  // is in scope.
-  getById: wsCompatProcedure.query((): WorkspaceItem | null => null),
+  getById: wsCompatProcedure.query(async ({ ctx }): Promise<WorkspaceItem | null> => {
+    if (!ctx.workspaceId) return null;
+    const db = await getServerDB();
+    await assertWorkspaceAccess(db, ctx.userId, ctx.workspaceId);
+    return (await new WorkspaceModel(db, ctx.userId).findById(ctx.workspaceId)) ?? null;
+  }),
 
   getMyStatistics: wsProcedure
     .input(workspaceStatisticsInput)
-    .query((): WorkspaceStatistics | null => null),
+    .query(async ({ ctx, input }): Promise<WorkspaceStatistics> => {
+      const db = await getServerDB();
+      await assertWorkspaceAccess(db, ctx.userId, ctx.workspaceId);
+      return getWorkspaceStatistics(db, ctx.workspaceId, ctx.userId, input?.todayStartAt);
+    }),
 
-  getSettings: wsProcedure.query((): Record<string, unknown> => ({})),
+  getSettings: wsProcedure.query(async ({ ctx }): Promise<Record<string, unknown>> => {
+    const db = await getServerDB();
+    await assertWorkspaceAccess(db, ctx.userId, ctx.workspaceId);
+    return new WorkspaceModel(db, ctx.userId).getSettings(ctx.workspaceId) as Promise<
+      Record<string, unknown>
+    >;
+  }),
 
-  /** Workspace-wide totals across all members — Admin or higher, like cloud. */
   getStatistics: wsAdminProcedure
     .input(workspaceStatisticsInput)
-    .query((): WorkspaceStatistics | null => null),
+    .query(async ({ ctx, input }): Promise<WorkspaceStatistics> => {
+      const db = await getServerDB();
+      await assertWorkspaceAccess(db, ctx.userId, ctx.workspaceId, 'admin');
+      return getWorkspaceStatistics(db, ctx.workspaceId, undefined, input?.todayStartAt);
+    }),
 
-  list: authedProcedure.query(async (): Promise<WorkspaceMembershipSummary[]> => []),
+  list: authedProcedure.query(async ({ ctx }): Promise<WorkspaceMembershipSummary[]> => {
+    const db = await getServerDB();
+    await ensureTrustedWorkspaceMembership(db, ctx.userId);
+    const workspaces = await new WorkspaceModel(db, ctx.userId).listUserWorkspaces();
+    return workspaces
+      .filter((workspace) => ['owner', 'admin', 'member', 'viewer'].includes(workspace.role))
+      .map((workspace) => ({
+        ...workspace,
+        role:
+          workspace.role === 'owner' && workspace.primaryOwnerId !== ctx.userId
+            ? 'admin'
+            : workspace.role,
+      }));
+  }),
+
+  provisionTrustedMembers: wsAdminProcedure
+    .input(
+      z
+        .object({
+          cursor: z.string().min(1).optional(),
+          limit: z.number().int().min(1).max(100).default(50),
+        })
+        .default({ limit: 50 }),
+    )
+    .mutation(async ({ ctx, input }) =>
+      provisionTrustedWorkspaceMembers(await getServerDB(), ctx.userId, ctx.workspaceId, input),
+    ),
 
   update: wsAdminProcedure
     .input(
       z.object({
         avatar: z.string().optional(),
         description: z.string().max(1000).optional(),
-        name: z.string().min(1).max(255).optional(),
+        name: z.string().trim().min(1).max(255).optional(),
         slug: workspaceSlugSchema.optional(),
       }),
     )
-    .mutation(async (): Promise<void> => cloudOnly('Workspace update')),
+    .mutation(async ({ ctx, input }): Promise<void> => {
+      const db = await getServerDB();
+      await assertWorkspaceAccess(db, ctx.userId, ctx.workspaceId, 'admin');
+      const model = new WorkspaceModel(db, ctx.userId);
+      if (input.slug) {
+        const existing = await model.findBySlug(input.slug);
+        if (existing && existing.id !== ctx.workspaceId)
+          throw new TRPCError({ code: 'CONFLICT', message: 'Workspace slug is already in use' });
+      }
+      await model.update(ctx.workspaceId, input);
+    }),
 });
