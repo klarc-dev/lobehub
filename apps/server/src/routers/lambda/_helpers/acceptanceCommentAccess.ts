@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 
-import { WorkspaceMemberModel } from '@/database/models/workspaceMember';
+import { getActiveWorkspaceMembershipRole } from '@/database/models/workspace';
 import type { AcceptanceItem } from '@/database/schemas/verify';
 import { acceptances } from '@/database/schemas/verify';
 import type { LobeChatDatabase } from '@/database/type';
@@ -55,16 +55,20 @@ export async function resolveAcceptanceCommentAccess(
     : [];
   if (!acceptance) throw new TRPCError({ code: 'NOT_FOUND', message: 'Acceptance not found' });
 
-  const isOwner = Boolean(userId) && userId === acceptance.userId;
-  const member =
-    !isOwner && userId && acceptance.workspaceId
-      ? await new WorkspaceMemberModel(db, userId).getMember(acceptance.workspaceId, userId)
-      : undefined;
+  const role =
+    userId && acceptance.workspaceId
+      ? await getActiveWorkspaceMembershipRole(db, { userId, workspaceId: acceptance.workspaceId })
+      : null;
+  const active = role !== null && ['viewer', 'member', 'admin', 'owner'].includes(role);
+  const isOwner =
+    Boolean(userId) && userId === acceptance.userId && (!acceptance.workspaceId || active);
 
-  const canRead = isOwner || acceptance.visibility === 'public' || Boolean(member);
+  const canRead = isOwner || acceptance.visibility === 'public' || active;
   if (!canRead) throw new TRPCError({ code: 'NOT_FOUND', message: 'Acceptance not found' });
 
-  const canApprove = isOwner || (Boolean(member) && member!.role !== 'viewer');
+  const canApprove = acceptance.workspaceId
+    ? role === 'member' || role === 'admin' || role === 'owner'
+    : isOwner;
 
   return {
     acceptance,
@@ -73,11 +77,11 @@ export async function resolveAcceptanceCommentAccess(
     isOwner,
     /*
      * Membership of the acceptance's workspace is what earns the right to speak
-     * as one of its agents — the creator counts, they filed it there. The
-     * acceptance being public does not: that hands out read access, and the
+     * as one of its agents. Creator identity alone cannot resurrect membership.
+     * Being public does not grant agent authority: it hands out read access, and the
      * agent ids ride along in the discussion payload, so a visitor could read
      * one off the page and post under that agent's name and face.
      */
-    memberOfWorkspaceId: isOwner || member ? (acceptance.workspaceId ?? undefined) : undefined,
+    memberOfWorkspaceId: canApprove ? (acceptance.workspaceId ?? undefined) : undefined,
   };
 }
