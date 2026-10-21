@@ -11,6 +11,7 @@ import {
   ensureTrustedWorkspaceMembership,
   getTrustedWorkspaceConfig,
   getWorkspaceStatistics,
+  isTrustedWorkspaceUser,
   listWorkspaceMembers,
   provisionTrustedWorkspaceMembers,
 } from './selfHosted';
@@ -114,6 +115,17 @@ describe('self-hosted workspace security and enrollment', () => {
   });
 
   it('requires explicit complete configuration and the actual verified primary owner', async () => {
+    expect(
+      isTrustedWorkspaceUser(
+        {
+          banned: false,
+          email: 'user@example.test@evil.test',
+          emailVerified: true,
+          emailVerifiedAt: null,
+        },
+        'example.test',
+      ),
+    ).toBe(false);
     expect(getTrustedWorkspaceConfig({})).toBeNull();
     expect(
       getTrustedWorkspaceConfig({

@@ -64,6 +64,7 @@ export const isTrustedWorkspaceUser = (
 ) =>
   !user.banned &&
   (user.emailVerified || !!user.emailVerifiedAt) &&
+  z.string().email().safeParse(user.email?.trim()).success &&
   user.email?.trim().toLowerCase().split('@')[1] === domain;
 
 /** Explicit opt-in reconciliation, not invitation acceptance. Never restores a removed member. */
