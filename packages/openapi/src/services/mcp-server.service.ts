@@ -167,6 +167,9 @@ export class McpServerService extends BaseService {
     const { toolCount } = await syncConnectorToolsById(id, {
       connectorModel: model,
       connectorToolModel: this.connectorToolModel,
+      serverDB: this.db,
+      userId: this.userId,
+      workspaceId: this.workspaceId,
     });
     return { id, status: ConnectorStatus.connected, toolCount };
   }

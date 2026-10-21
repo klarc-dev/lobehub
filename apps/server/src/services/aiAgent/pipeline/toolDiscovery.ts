@@ -796,7 +796,7 @@ export const discoverTools = async (
       scheduleStaleConnectorToolsRefresh(
         [...connectorsMcp, ...discoverableConnectorsMcp],
         buildLastSyncedAtMap([...connectorTools, ...discoverableConnectorTools]),
-        { connectorModel: refreshConnectorModel, connectorToolModel: deps.connectorToolModel },
+        { ...deps, connectorModel: refreshConnectorModel, serverDB: deps.db },
       );
     } catch (err) {
       log('execAgent: failed to schedule connector tool refresh (ignored): %O', err);

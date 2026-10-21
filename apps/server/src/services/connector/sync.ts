@@ -2,15 +2,20 @@ import type { ConnectorModel, DecryptedConnector } from '@/database/models/conne
 import type { ConnectorToolModel } from '@/database/models/connectorTool';
 import type { ConnectorCredentials } from '@/database/schemas';
 import { ConnectorMcpConnectionType, ConnectorStatus } from '@/database/schemas';
+import type { LobeChatDatabase } from '@/database/type';
 import type { AuthConfig } from '@/libs/mcp';
 import { inferCrudType } from '@/libs/mcp/utils';
 import { mcpService } from '@/server/services/mcp';
+import { assertWorkspaceExecutionAllowed } from '@/server/services/workspaceExecutionAuthorization';
 
 import { ensureFreshConnectorToken } from './tokens';
 
 export interface ConnectorToolSyncContext {
   connectorModel: ConnectorModel;
   connectorToolModel: ConnectorToolModel;
+  serverDB?: LobeChatDatabase;
+  userId?: string;
+  workspaceId?: string | null;
 }
 
 /** Build the MCP client connection params (with auth) from a connector row. */
@@ -34,8 +39,7 @@ export const buildConnectorMcpParams = (
   // type. Merge them on top of any header-type credential headers (older rows
   // stored custom headers as a 'header' credential before this split).
   const customHeaders = connector.metadata?.customHeaders as Record<string, string> | undefined;
-  const mergedHeaders =
-    headers || customHeaders ? { ...headers, ...customHeaders } : undefined;
+  const mergedHeaders = headers || customHeaders ? { ...headers, ...customHeaders } : undefined;
   return {
     auth,
     headers: mergedHeaders,
@@ -105,8 +109,20 @@ export const syncConnectorToolsById = async (
     throw new Error('Connector has no MCP server URL configured');
   }
 
+  const workspaceId = connector.workspaceId ?? ctx.workspaceId;
+  const assertExecutionAllowed = () =>
+    assertWorkspaceExecutionAllowed({
+      db: ctx.serverDB,
+      userId: ctx.userId,
+      workspaceId,
+    });
+
+  // Deferred refreshes must authorize the actor when they run, not when queued.
+  await assertExecutionAllowed();
+
   // Refresh the OAuth access token if it has expired before connecting.
   connector = await ensureFreshConnectorToken(connector, ctx.connectorModel);
+  await assertExecutionAllowed();
 
   const mcpParams = buildConnectorMcpParams(connector);
 
@@ -114,6 +130,7 @@ export const syncConnectorToolsById = async (
   try {
     rawTools = await mcpService.listRawTools(mcpParams);
   } catch (err) {
+    await assertExecutionAllowed();
     await ctx.connectorModel.updateStatus(connectorId, ConnectorStatus.error);
     throw err;
   }
@@ -125,6 +142,7 @@ export const syncConnectorToolsById = async (
     toolName: t.name,
   }));
 
+  await assertExecutionAllowed();
   await ctx.connectorToolModel.upsertMany(connectorId, syncInputs);
   await ctx.connectorModel.updateStatus(connectorId, ConnectorStatus.connected);
 

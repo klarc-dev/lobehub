@@ -181,6 +181,9 @@ export const GET = async (req: NextRequest) => {
       const { toolCount } = await syncConnectorToolsById(payload.connectorId, {
         connectorModel,
         connectorToolModel,
+        serverDB,
+        userId: payload.lobeUserId,
+        workspaceId: payload.workspaceId,
       });
       synced = true;
       log('connector %s authorized + synced %d tools', payload.connectorId, toolCount);
