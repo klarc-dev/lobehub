@@ -9,6 +9,32 @@ vi.mock('@/libs/next/proxy/define-config', () => ({
 }));
 
 describe('SPA proxy route matching', () => {
+  it.each([
+    '/klarc-acceptance',
+    '/klarc-acceptance/settings/connector',
+    '/team-a/agent/123',
+    '/abc',
+  ])('routes workspace deep link %s through the SPA proxy', (pathname) => {
+    expect(unstable_doesMiddlewareMatch({ config, url: `http://localhost:3010${pathname}` })).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    '/api',
+    '/trpc',
+    '/webapi',
+    '/market/agent',
+    '/spa/en-US',
+    '/_next/static/app.js',
+    '/favicon.ico',
+    '/robots.txt',
+    '/_spa/app.js',
+  ])('does not intercept internal or static path %s', (pathname) => {
+    expect(unstable_doesMiddlewareMatch({ config, url: `http://localhost:3010${pathname}` })).toBe(
+      false,
+    );
+  });
   it.each(['/a/shared-agent', '/a/e2e-missing-share', '/a/shared-agent?hl=en-US'])(
     'routes %s through the SPA proxy',
     (pathname) => {

@@ -15,6 +15,10 @@ export const config = {
     // /oauth stay matched below — their middleware pass is still load-bearing.)
     // include the /
     '/',
+    // Native workspace URLs use a 3–32 character lowercase slug. Keep backend
+    // and internal template roots out of this dynamic matcher. Membership is
+    // still resolved by the SPA and enforced independently by every API.
+    '/:workspaceSlug((?!api(?:/|$)|trpc(?:/|$)|webapi(?:/|$)|market(?:/|$)|spa(?:/|$))[a-z0-9][a-z0-9-]{1,30}[a-z0-9])/:path*',
     '/acceptance',
     '/acceptance(.*)',
     '/apps',
