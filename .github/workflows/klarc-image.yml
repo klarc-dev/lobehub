@@ -1,0 +1,52 @@
+name: Klarc LobeHub image
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [klarc/self-hosted-workspace]
+    paths-ignore:
+      - '**/*.md'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: klarc-image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Reclaim runner space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker system prune -af
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/klarc-dev/lobehub:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/klarc-dev/lobehub
+            org.opencontainers.image.revision=${{ github.sha }}
+          build-args: |
+            SHA=${{ github.sha }}
+          cache-from: type=gha,scope=klarc-lobehub
+          cache-to: type=gha,mode=max,scope=klarc-lobehub
+      - name: Record immutable deployment image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: echo "ghcr.io/klarc-dev/lobehub@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
