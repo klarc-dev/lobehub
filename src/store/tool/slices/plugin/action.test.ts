@@ -2,13 +2,19 @@ import { type LobeTool } from '@lobechat/types';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { pluginService } from '@/services/plugin';
 import { merge } from '@/utils/merge';
 
 import { useToolStore } from '../../store';
 
+vi.mock('@/business/client/hooks/useActiveWorkspaceId', () => ({
+  getActiveWorkspaceId: vi.fn(),
+  useActiveWorkspaceId: () => null,
+}));
 vi.mock('@/services/plugin', () => ({
   pluginService: {
+    getPluginForEdit: vi.fn(),
     getInstalledPlugins: vi.fn().mockResolvedValue([]),
     updatePluginSettings: vi.fn(),
   },
@@ -17,6 +23,7 @@ vi.mock('@/services/plugin', () => ({
 beforeEach(() => {
   // Reset all mocks before each test
   vi.resetAllMocks();
+  vi.mocked(getActiveWorkspaceId).mockReturnValue(null);
 });
 
 describe('useToolStore:plugin', () => {
@@ -34,6 +41,28 @@ describe('useToolStore:plugin', () => {
   });
 
   describe('updatePluginSettings', () => {
+    it('merges workspace edits over protected detail, never the redacted inventory', async () => {
+      vi.mocked(getActiveWorkspaceId).mockReturnValue('team');
+      vi.mocked(pluginService.getInstalledPlugins).mockResolvedValue([
+        { identifier: 'shared', type: 'plugin' },
+      ]);
+      vi.mocked(pluginService.getPluginForEdit).mockResolvedValue({
+        identifier: 'shared',
+        settings: { apiKey: 'OWNER_SENTINEL', label: 'old' },
+        type: 'plugin',
+      });
+      const { result } = renderHook(() => useToolStore());
+      await act(async () => result.current.updatePluginSettings('shared', { label: 'new' }));
+      expect(pluginService.updatePluginSettings).toHaveBeenCalledWith(
+        'shared',
+        { apiKey: 'OWNER_SENTINEL', label: 'new' },
+        expect.any(AbortSignal),
+      );
+      expect(JSON.stringify(useToolStore.getState().installedPlugins)).not.toContain(
+        'OWNER_SENTINEL',
+      );
+    });
+
     it('should update settings for a given plugin', async () => {
       const pluginId = 'test-plugin';
       const newSettings = { setting1: 'new-value' };

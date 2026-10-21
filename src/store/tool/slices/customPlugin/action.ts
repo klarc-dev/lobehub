@@ -1,5 +1,6 @@
 import { merge } from 'es-toolkit/compat';
 
+import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { mcpService } from '@/services/mcp';
 import { pluginService } from '@/services/plugin';
 import { type StoreSetter } from '@/store/types';
@@ -34,7 +35,9 @@ export class CustomPluginActionImpl {
   };
 
   reinstallCustomPlugin = async (id: string): Promise<void> => {
-    const plugin = pluginSelectors.getCustomPluginById(id)(this.#get());
+    const plugin = getActiveWorkspaceId()
+      ? await pluginService.getPluginForEdit(id)
+      : pluginSelectors.getCustomPluginById(id)(this.#get());
     if (!plugin) return;
 
     const { refreshPlugins, updateInstallError, updateInstallLoadingState } = this.#get();

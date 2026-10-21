@@ -8,7 +8,9 @@ import { isLocalOrPrivateUrl, safeParseJSON } from '@lobechat/utils';
 import { deserializeMcpIpcPayload, serializeMcpIpcPayload } from '@lobechat/utils/mcpIpcPayload';
 import { type PluginManifest } from '@lobehub/market-sdk';
 import { type CallReportRequest } from '@lobehub/market-types';
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { type MCPToolCallResult } from '@/libs/mcp';
 import { toolsClient } from '@/libs/trpc/client';
 import { ensureElectronIpc } from '@/utils/electron/ipc';
@@ -69,6 +71,29 @@ class MCPService {
     const plugin = installPlugin || customPlugin;
 
     if (!plugin) return;
+
+    // Workspace inventory deliberately contains no connection secrets. Resolve
+    // the stored connection on the server instead of rebuilding it in a member's
+    // browser (including desktop IPC, which must not receive another member's env).
+    if (installPlugin && getActiveWorkspaceId()) {
+      const { lambdaClient } = await import('@/libs/trpc/client');
+      const result = await lambdaClient.plugin.callTool.mutate(
+        { args, identifier, toolName: apiName },
+        { signal },
+      );
+      const state = CallToolResultSchema.safeParse(result.state);
+      return {
+        content: result.content,
+        error: result.error,
+        state: state.success
+          ? state.data
+          : {
+              content: [{ text: result.content, type: 'text' as const }],
+              isError: !result.success,
+            },
+        success: result.success,
+      } satisfies MCPToolCallResult;
+    }
 
     const connection = plugin.customParams?.mcp;
     const settingsEntries = plugin.settings

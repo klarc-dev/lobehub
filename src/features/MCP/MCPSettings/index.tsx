@@ -1,3 +1,4 @@
+import type { LobeTool } from '@lobechat/types';
 import { Button, createStaticStyles, Flexbox, Icon, Input, Text, toast } from '@lobehub/ui';
 import { Form, useForm } from '@lobehub/ui/form';
 import { EditIcon, LinkIcon, Settings2Icon, TerminalIcon } from 'lucide-react';
@@ -7,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import KeyValueEditor from '@/components/KeyValueEditor';
 import MCPStdioCommandInput from '@/components/MCPStdioCommandInput';
 import ArgsInput from '@/features/PluginDevModal/MCPManifestForm/ArgsInput';
+import { PluginEditAccess } from '@/features/PluginSettings/PluginEditAccess';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/selectors';
 
@@ -156,7 +158,8 @@ const Settings = ({
   ref,
   identifier,
   hideFooter,
-}: SettingsProps & { ref?: React.RefObject<SettingsRef | null> }) => {
+  installedPlugin,
+}: SettingsProps & { installedPlugin: LobeTool; ref?: React.RefObject<SettingsRef | null> }) => {
   const { t } = useTranslation(['plugin', 'common']);
   const [loading, setLoading] = useState(false);
   const [connectionLoading, setConnectionLoading] = useState(false);
@@ -168,8 +171,7 @@ const Settings = ({
   ]);
 
   // Get installed plugin info
-  const installedPlugin = useToolStore(pluginSelectors.getInstalledPluginById(identifier));
-  const pluginSettings = useToolStore(pluginSelectors.getPluginSettingsById(identifier));
+  const pluginSettings = installedPlugin.settings ?? {};
 
   const customParams = installedPlugin?.customParams?.mcp;
   const isStdioType = customParams?.type === 'stdio';
@@ -403,4 +405,15 @@ const Settings = ({
   );
 };
 
-export default Settings;
+const ProtectedSettings = (
+  props: SettingsProps & { ref?: React.RefObject<SettingsRef | null> },
+) => {
+  const fallback = useToolStore(pluginSelectors.getInstalledPluginById(props.identifier));
+  return (
+    <PluginEditAccess fallback={fallback} id={props.identifier}>
+      {(plugin) => <Settings {...props} installedPlugin={plugin} />}
+    </PluginEditAccess>
+  );
+};
+
+export default ProtectedSettings;

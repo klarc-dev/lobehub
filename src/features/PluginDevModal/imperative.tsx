@@ -4,6 +4,7 @@ import isEqual from 'fast-deep-equal';
 import { memo } from 'react';
 
 import { mountImperative } from '@/components/ImperativeMount';
+import { PluginEditAccess } from '@/features/PluginSettings/PluginEditAccess';
 import { usePermission } from '@/hooks/usePermission';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/selectors';
@@ -26,25 +27,34 @@ const PluginEditDrawer = memo<PluginEditDrawerProps>(({ identifier, onClose, ope
   ]);
 
   return (
-    <DevModal
-      mode={'edit'}
-      open={open}
-      value={value}
-      onValueChange={updateNewCustomPlugin}
-      onDelete={() => {
-        if (!canEdit) return;
-        uninstallPlugin(identifier);
-        onClose();
-      }}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      onSave={async (devPlugin) => {
-        if (!canEdit) return;
-        await installCustomPlugin(devPlugin);
-        onClose();
-      }}
-    />
+    <PluginEditAccess enabled={open} fallback={value} id={identifier}>
+      {(plugin) => (
+        <DevModal
+          mode={'edit'}
+          open={open}
+          value={{
+            ...plugin,
+            customParams: plugin.customParams ?? undefined,
+            manifest: plugin.manifest ?? undefined,
+            type: 'customPlugin',
+          }}
+          onValueChange={updateNewCustomPlugin}
+          onDelete={() => {
+            if (!canEdit) return;
+            uninstallPlugin(identifier);
+            onClose();
+          }}
+          onOpenChange={(next) => {
+            if (!next) onClose();
+          }}
+          onSave={async (devPlugin) => {
+            if (!canEdit) return;
+            await installCustomPlugin(devPlugin);
+            onClose();
+          }}
+        />
+      )}
+    </PluginEditAccess>
   );
 });
 

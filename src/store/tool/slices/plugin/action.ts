@@ -2,6 +2,7 @@ import { type Schema, type ValidationResult } from '@cfworker/json-schema';
 import { type LobeTool } from '@lobechat/types';
 import { type SWRResponse } from 'swr';
 
+import { getActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { MESSAGE_CANCEL_FLAT } from '@/const/message';
 import { createReplicaSlice, type ReplicaLens, type ReplicaSyncResult } from '@/libs/replica';
 import { subscribeCacheScope } from '@/libs/replica/cacheScopeEvents';
@@ -152,7 +153,10 @@ export class PluginActionImpl {
     // never the display projection (which has no connection parameters).
     if (!this.#hasServerRecords()) await this.#loadServerRecords();
 
-    const installedPlugin = pluginSelectors.getInstalledPluginById(id)(this.#get());
+    const workspaceId = getActiveWorkspaceId();
+    const installedPlugin = workspaceId
+      ? await pluginService.getPluginForEdit(id)
+      : pluginSelectors.getInstalledPluginById(id)(this.#get());
 
     if (!installedPlugin) return;
 
@@ -163,7 +167,10 @@ export class PluginActionImpl {
 
     await this.#installedPlugins.optimistic(
       INSTALLED_PLUGINS_KEY,
-      (plugins) => plugins.map((p) => (p.identifier === id ? { ...p, customParams } : p)),
+      (plugins) =>
+        workspaceId
+          ? plugins
+          : plugins.map((p) => (p.identifier === id ? { ...p, customParams } : p)),
       () => pluginService.updatePlugin(id, { customParams: { mcp: customParams.mcp } }),
     );
 
@@ -193,14 +200,21 @@ export class PluginActionImpl {
       if (controller.signal.aborted) return;
     }
 
-    const previousSettings = pluginSelectors.getPluginSettingsById(id)(this.#get());
+    const workspaceId = getActiveWorkspaceId();
+    const previousSettings = workspaceId
+      ? ((await pluginService.getPluginForEdit(id)).settings ?? {})
+      : pluginSelectors.getPluginSettingsById(id)(this.#get());
+    if (controller.signal.aborted) return;
     const nextSettings = override ? settings : merge(previousSettings, settings);
 
     // The row shows the new settings immediately; a failed or aborted write
     // rolls it back to the confirmed value plus any newer write in flight.
     await this.#installedPlugins.optimistic(
       INSTALLED_PLUGINS_KEY,
-      (plugins) => plugins.map((p) => (p.identifier === id ? { ...p, settings: nextSettings } : p)),
+      (plugins) =>
+        workspaceId
+          ? plugins
+          : plugins.map((p) => (p.identifier === id ? { ...p, settings: nextSettings } : p)),
       () => pluginService.updatePluginSettings(id, nextSettings, controller.signal),
     );
 

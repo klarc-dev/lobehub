@@ -20,6 +20,9 @@ export class PluginService {
     return lambdaClient.plugin.getPlugins.query();
   };
 
+  getPluginForEdit = (id: string): Promise<LobeTool> =>
+    lambdaClient.plugin.getPluginForEdit.query({ id });
+
   uninstallPlugin = async (identifier: string): Promise<void> => {
     await lambdaClient.plugin.removePlugin.mutate({ id: identifier });
   };

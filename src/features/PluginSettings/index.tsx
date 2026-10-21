@@ -8,6 +8,7 @@ import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/selectors';
 
 import ItemRender from '../../components/JSONSchemaConfig/ItemRender';
+import { PluginEditAccess } from './PluginEditAccess';
 
 export const transformPluginSettings = (pluginSettings: ToolManifestSettings) => {
   if (!pluginSettings?.properties) return [];
@@ -38,9 +39,14 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
   `,
 }));
 
-const PluginSettingsConfig = memo<PluginSettingsConfigProps>(({ schema, id }) => {
+const PluginSettingsForm = ({
+  schema,
+  id,
+  pluginSetting,
+}: PluginSettingsConfigProps & {
+  pluginSetting: Record<string, unknown>;
+}) => {
   const [updatePluginSettings] = useToolStore((s) => [s.updatePluginSettings]);
-  const pluginSetting = useToolStore(pluginSelectors.getPluginSettingsById(id), isEqual);
 
   const form = useForm({
     initialValues: pluginSetting,
@@ -79,6 +85,21 @@ const PluginSettingsConfig = memo<PluginSettingsConfigProps>(({ schema, id }) =>
         tag: item.tag,
       }))}
     />
+  );
+};
+
+const PluginSettingsConfig = memo<PluginSettingsConfigProps>(({ schema, id }) => {
+  const fallback = useToolStore(pluginSelectors.getInstalledPluginById(id), isEqual);
+  return (
+    <PluginEditAccess fallback={fallback} id={id}>
+      {(plugin) => (
+        <PluginSettingsForm
+          id={id}
+          pluginSetting={plugin.settings ?? {}}
+          schema={plugin.manifest?.settings ?? schema}
+        />
+      )}
+    </PluginEditAccess>
   );
 });
 

@@ -2,6 +2,7 @@ import isEqual from 'fast-deep-equal';
 import { memo, type ReactNode } from 'react';
 
 import CustomConnectorModal from '@/features/Connectors/CustomConnectorModal';
+import { PluginEditAccess } from '@/features/PluginSettings/PluginEditAccess';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
 
@@ -31,14 +32,21 @@ const EditCustomPlugin = memo<EditCustomPluginProps>(
           e.stopPropagation();
         }}
       >
-        {legacyPlugin && (
-          <CustomConnectorModal
-            legacyPlugin={legacyPlugin}
-            open={open}
-            onClose={() => onOpenChange(false)}
-            onEditSuccess={() => onOpenChange(false)}
-          />
-        )}
+        <PluginEditAccess enabled={open} fallback={legacyPlugin} id={identifier}>
+          {(plugin) => (
+            <CustomConnectorModal
+              open={open}
+              legacyPlugin={{
+                ...plugin,
+                customParams: plugin.customParams ?? undefined,
+                manifest: plugin.manifest ?? undefined,
+                type: 'customPlugin',
+              }}
+              onClose={() => onOpenChange(false)}
+              onEditSuccess={() => onOpenChange(false)}
+            />
+          )}
+        </PluginEditAccess>
         {children}
       </div>
     );
