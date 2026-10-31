@@ -5,6 +5,7 @@ import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceA
 import { ConnectorModel } from '@/database/models/connector';
 import { PluginModel } from '@/database/models/plugin';
 import { getComposioClient, isComposioConnectedAccountNotFoundError } from '@/libs/composio';
+import { isComposioExecutionFailure } from '@/libs/composio/executionResult';
 import { listComposioTools } from '@/libs/composio/listTools';
 import { publicProcedure, router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
@@ -99,7 +100,7 @@ export const composioToolsRouter = router({
       }
 
       const data = result as any;
-      if (data.successful === false || data.error) {
+      if (isComposioExecutionFailure(result)) {
         return await MCPService.processToolCallResult({
           content: [
             {

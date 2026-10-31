@@ -98,6 +98,15 @@ describe('composioToolsRouter.executeAction', () => {
   for (const response of [
     { data: { misleading: 'payload' }, successful: false },
     { data: {}, error: 'sensitive-provider-details', successful: true },
+    {
+      data: {
+        http_error: '400 Client Error: sensitive-provider-details',
+        message: '{"error":{"code":400}}',
+        status_code: 400,
+      },
+      error: null,
+      successful: true,
+    },
   ]) {
     it('returns a sanitized error for an explicit provider failure', async () => {
       mocks.pluginFindById.mockResolvedValue({

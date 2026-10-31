@@ -12,6 +12,7 @@ import {
   isComposioClientAvailable,
   isComposioConnectedAccountNotFoundError,
 } from '@/libs/composio';
+import { isComposioExecutionFailure } from '@/libs/composio/executionResult';
 import { type ToolExecutionResult } from '@/server/services/toolExecution/types';
 
 const log = debug('lobe-server:composio-service');
@@ -157,7 +158,7 @@ export class ComposioService {
       log('executeComposioTool: response: %O', result);
 
       const data = result as any;
-      if (data.successful === false || data.error) {
+      if (isComposioExecutionFailure(result)) {
         return {
           content:
             'Composio tool execution failed. Verify authorization and the requested operation before retrying.',

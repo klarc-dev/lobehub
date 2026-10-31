@@ -220,6 +220,15 @@ describe('ComposioService.executeComposioTool', () => {
   for (const response of [
     { data: { misleading: 'payload' }, successful: false },
     { data: {}, error: 'sensitive-provider-details', successful: true },
+    {
+      data: {
+        http_error: '400 Client Error: sensitive-provider-details',
+        message: '{"error":{"code":400}}',
+        status_code: 400,
+      },
+      error: null,
+      successful: true,
+    },
   ]) {
     it('fails closed and sanitizes explicit provider errors', async () => {
       mocks.connectorQueryByIdentifiers.mockResolvedValue([activeConnectorRow()]);
