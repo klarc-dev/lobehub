@@ -1,7 +1,7 @@
 import type { AiFullModelCard } from 'model-bank';
 
 import { estimateOpenAIChatInputTokens } from '../core/usageConverters';
-import type { ChatStreamPayload } from '../types/chat';
+import type { ChatMethodOptions, ChatStreamPayload } from '../types/chat';
 
 /**
  * Default safety buffer (in tokens) reserved on top of the estimated input
@@ -136,6 +136,22 @@ export const resolveSafeMaxTokens = (
   }
 
   return maxOutput !== undefined ? Math.min(maxOutput, remaining) : remaining;
+};
+
+export const assertScopedContextWithinWindow = (
+  payload: Pick<ChatStreamPayload, 'messages' | 'model' | 'tools'>,
+  config: AssertContextWithinWindowOptions & { models: AiFullModelCard[] },
+  limits?: ChatMethodOptions['resolvedModelTokenLimits'],
+) => {
+  const { models, ...options } = config;
+  const contextWindowTokens = limits?.contextWindowTokens;
+  assertContextWithinWindow(
+    payload,
+    contextWindowTokens === undefined
+      ? models
+      : [{ id: payload.model, type: 'chat', contextWindowTokens }],
+    options,
+  );
 };
 
 export interface AssertContextWithinWindowOptions {

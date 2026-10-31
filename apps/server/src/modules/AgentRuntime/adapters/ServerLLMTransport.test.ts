@@ -36,6 +36,37 @@ vi.mock('../llmRelay/resolveLlmExecutionSite', () => ({
 }));
 
 describe('ServerLLMTransport.stream · conversation affinity', () => {
+  it('passes the compression model limits as private options without inheriting parent limits', async () => {
+    const chat = vi.fn().mockImplementation(async () => new Response(''));
+    vi.mocked(initModelRuntimeFromDB).mockImplementation(async () => new ModelRuntime({ chat }));
+    findByIdAndProviderMock.mockResolvedValue({ contextWindowTokens: 16_384 });
+    const ctx = {
+      serverDB: {},
+      userId: 'user-1',
+      workspaceId: 'workspace-1',
+      loadAgentState: vi.fn(async () => ({
+        modelRuntimeConfig: {
+          modelFacts: {
+            cards: [],
+            model: 'parent',
+            provider: 'custom',
+            tokenLimits: { contextWindowTokens: 1_000_000, maxOutput: 100_000 },
+          },
+        },
+      })),
+    } as unknown as RuntimeExecutorContext;
+    await new ServerLLMTransport(ctx).stream({
+      messages: [],
+      model: 'compressor',
+      provider: 'custom',
+      max_tokens: 32_000,
+    });
+    expect(chat.mock.calls[0][1].resolvedModelTokenLimits.contextWindowTokens).toBe(16_384);
+    expect(chat.mock.calls[0][0].max_tokens).toBeLessThan(16_384);
+    expect(chat.mock.calls[0][0]).not.toHaveProperty('resolvedModelTokenLimits');
+    findByIdAndProviderMock.mockReset();
+  });
+
   it('retains the conversation ID across compression requests and runtime recreation', async () => {
     const chat = vi.fn().mockImplementation(async () => new Response(''));
     vi.mocked(initModelRuntimeFromDB).mockImplementation(async () => new ModelRuntime({ chat }));
@@ -387,6 +418,22 @@ describe('ServerLLMTransport.runAttempt · deployment name without frozen model 
       provider: 'volcengine',
       state,
     }) as unknown as LLMAttemptInput;
+
+  it('uses frozen limits for output budgets and passes them only in internal call options', async () => {
+    const chat = vi.fn().mockImplementation(async () => new Response(''));
+    vi.mocked(initModelRuntimeFromDB).mockImplementation(async () => new ModelRuntime({ chat }));
+    const tokenLimits = { contextWindowTokens: 1_000_000, maxOutput: 4096 };
+    const input = createAttemptInput({
+      modelRuntimeConfig: {
+        modelFacts: { cards: [], model: 'deepseek-v4-pro-ga', provider: 'volcengine', tokenLimits },
+      },
+    });
+    (input.context as any).modelParameters = { max_tokens: 32_000 };
+    await new ServerLLMTransport(createAttemptCtx()).runAttempt(input);
+    expect(chat.mock.calls[0][0].max_tokens).toBe(4096);
+    expect(chat.mock.calls[0][0]).not.toHaveProperty('resolvedModelTokenLimits');
+    expect(chat.mock.calls[0][1].resolvedModelTokenLimits).toEqual(tokenLimits);
+  });
 
   it('resolves the deployment catalog live when the operation has no modelFacts', async () => {
     const chat = vi.fn().mockImplementation(async () => new Response(''));

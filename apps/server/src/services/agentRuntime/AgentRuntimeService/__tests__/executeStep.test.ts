@@ -1,9 +1,10 @@
 /**
  * @vitest-environment node
  */
-import { resolveRuntimeModelTokenLimits } from '@/server/modules/Mecha/ModelParams/runtimeTokenLimits';
 import type { UIChatMessage } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { resolveRuntimeModelTokenLimits } from '@/server/modules/Mecha/ModelParams/runtimeTokenLimits';
 
 import { hookDispatcher } from '../../hooks';
 import { type AgentExecutionParams } from '../../types';

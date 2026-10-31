@@ -231,6 +231,8 @@ export interface ChatMethodOptions {
    * send the request to the ai api endpoint
    */
   requestHeaders?: Record<string, any>;
+  /** Scoped model facts for local guards only, never provider request fields. */
+  resolvedModelTokenLimits?: { contextWindowTokens?: number; maxOutput?: number };
   signal?: AbortSignal;
   /**
    * userId for the chat completion

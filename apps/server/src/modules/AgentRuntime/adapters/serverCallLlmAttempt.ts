@@ -63,6 +63,7 @@ interface CreateServerCallLlmAttemptInput {
   operationLogId: string;
   provider: string;
   resolved: ServerCallLlmTooling['resolved'];
+  resolvedModelTokenLimits?: ChatMethodOptions['resolvedModelTokenLimits'];
   topicId?: string;
   trigger?: unknown;
   /** User agent of the originating request, forwarded into the LLM-call metadata for auditing and spend attribution. */
@@ -151,6 +152,7 @@ export class ServerCallLlmAttempt {
   private readonly attempt: number;
   private readonly base64ImageEvents: Base64ImageData[] = [];
   private readonly chatPayload: ChatStreamPayload;
+  private readonly resolvedModelTokenLimits?: ChatMethodOptions['resolvedModelTokenLimits'];
   private completion?: OnFinishData;
   private readonly contentPartEvents: ContentPartData[] = [];
   private readonly ctx: RuntimeExecutorContext;
@@ -183,6 +185,7 @@ export class ServerCallLlmAttempt {
     attempt,
     blobStore,
     chatPayload,
+    resolvedModelTokenLimits,
     clientIp,
     ctx,
     events,
@@ -200,6 +203,7 @@ export class ServerCallLlmAttempt {
   }: CreateServerCallLlmAttemptInput) {
     this.attempt = attempt;
     this.chatPayload = chatPayload;
+    this.resolvedModelTokenLimits = resolvedModelTokenLimits;
     this.ctx = ctx;
     this.maxAttempts = maxAttempts;
     this.messageCount = messageCount;
@@ -260,6 +264,7 @@ export class ServerCallLlmAttempt {
     );
 
     const chatOptions: ChatMethodOptions = {
+      resolvedModelTokenLimits: this.resolvedModelTokenLimits,
       callback: {
         onBase64Image: async ({ image }) => {
           this.onFirstChunk();

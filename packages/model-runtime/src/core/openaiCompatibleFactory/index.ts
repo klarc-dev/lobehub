@@ -49,7 +49,7 @@ import { resolveMappedModelId, withMappedModelId } from '../../utils/modelIdMapp
 import { detectModelProvider } from '../../utils/modelParse';
 import { postProcessModelList } from '../../utils/postProcessModelList';
 import {
-  assertContextWithinWindow,
+  assertScopedContextWithinWindow,
   ContextExceededPreFlightError,
 } from '../../utils/resolveSafeMaxTokens';
 import { StreamingResponse } from '../../utils/response';
@@ -503,12 +503,13 @@ export const createOpenAICompatibleRuntime = <T extends Record<string, any> = an
           processedPayload = { ...payload, apiMode: 'responses' } as any;
         }
 
-        // Pre-flight: abort doomed requests before invoking handlePayload so
-        // providers don't waste a round-trip to upstream just to get a 400.
-        // See .
+        // Guard before dispatch using scoped facts when available.
         if (chatCompletion?.contextPreFlight) {
-          const { models: preFlightModels, ...preFlightOptions } = chatCompletion.contextPreFlight;
-          assertContextWithinWindow(processedPayload, preFlightModels, preFlightOptions);
+          assertScopedContextWithinWindow(
+            processedPayload,
+            chatCompletion.contextPreFlight,
+            options?.resolvedModelTokenLimits,
+          );
         }
 
         // Then perform factory-level processing
