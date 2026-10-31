@@ -1,7 +1,13 @@
 import type { AiModelReasoningConfig, ModelAbilities } from 'model-bank';
 
+/** Positive finite model limits. Missing fields mean the host has no known limit. */
+export interface ModelTokenLimits {
+  contextWindowTokens?: number;
+  maxOutput?: number;
+}
+
 /** The subset of a model card the model-parameter rules read (bundled bank or user-enabled list). */
-export interface ModelCardFacts {
+export interface ModelCardFacts extends ModelTokenLimits {
   abilities?: ModelAbilities | null;
   /** Deployment alias some providers address the model by. */
   deploymentName?: string | null;
@@ -16,6 +22,8 @@ export interface ModelCardFacts {
 export interface UserModelRowFacts {
   /** Stored as untyped JSON; a non-empty object replaces the card's abilities. */
   abilities?: unknown;
+  /** Persisted `ai_models.contextWindowTokens`; validated before overriding the catalog. */
+  contextWindowTokens?: number | null;
   /**
    * User-configured deployment alias (`ai_models.config.deploymentName`).
    * Deployment-catalog providers (Azure, Volcengine Ark, Spark) address the
@@ -51,5 +59,7 @@ export interface FrozenModelFacts {
   provider: string;
   /** Absent when the model cannot consume reasoning params at all. */
   reasoningConfig?: AiModelReasoningConfig;
+  /** `{}` freezes unknown limits. Absent on legacy snapshots that must resolve live. */
+  tokenLimits?: ModelTokenLimits;
   userModelRow?: UserModelRowFacts;
 }

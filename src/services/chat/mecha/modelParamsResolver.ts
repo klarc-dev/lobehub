@@ -21,11 +21,13 @@ export { resolveDefaultEnableAdaptiveThinkingForModel, resolveDefaultThinkingLev
 
 const toModelCard = (item: EnabledAiModel | LobeDefaultAiModelListItem) => ({
   abilities: item.abilities,
+  contextWindowTokens: item.contextWindowTokens,
   deploymentName: item.config?.deploymentName,
   displayName: item.displayName,
   extendParams: item.settings?.extendParams,
   id: item.id,
   knowledgeCutoff: item.knowledgeCutoff,
+  maxOutput: 'maxOutput' in item && typeof item.maxOutput === 'number' ? item.maxOutput : undefined,
   providerId: item.providerId,
 });
 
@@ -79,7 +81,11 @@ export const createBrowserModelParamsProviders = ({
     const own = aiModelSelectors.getEnabledModelById(m, p)(state);
     const extendParams = aiModelSelectors.modelExtendParams(m, p)(state);
     if (!own && extendParams === undefined) return null;
-    return { displayName: own?.displayName, extendParams };
+    return {
+      contextWindowTokens: own?.contextWindowTokens,
+      displayName: own?.displayName,
+      extendParams,
+    };
   },
   listModelCards: () => {
     const state = getAiInfraStoreState();

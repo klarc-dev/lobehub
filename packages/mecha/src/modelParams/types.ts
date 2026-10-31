@@ -4,13 +4,14 @@ import type {
   LobeAgentChatConfig,
   ModelCardFacts,
   ModelMediaCapabilities,
+  ModelTokenLimits,
   UserModelRowFacts,
 } from '@lobechat/types';
 import type { AiModelReasoningConfig } from 'model-bank';
 
 // The facts a host reads for the rules are also what an operation freezes onto
 // its state, so they are declared once in `@lobechat/types`.
-export type { FrozenModelFacts, ModelCardFacts, UserModelRowFacts };
+export type { FrozenModelFacts, ModelCardFacts, ModelTokenLimits, UserModelRowFacts };
 
 /** The reasoning config a topic pinned at creation, with the model it was pinned for. */
 export interface TopicReasoningPinFacts {
@@ -64,7 +65,7 @@ export interface ModelParamsProviders {
   listModelCards: () => ModelCardFacts[];
 }
 
-export interface ResolvedModelExtendParamList {
+export interface ResolvedModelExtendParamList extends ModelTokenLimits {
   /** Card matched by id across any provider (aggregation fallback). */
   canonicalModelCard?: ModelCardFacts;
   /** Card for exactly `provider` / `model`. */

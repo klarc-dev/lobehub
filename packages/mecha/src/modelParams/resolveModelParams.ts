@@ -23,6 +23,7 @@ import type {
   ModelCardFacts,
   ModelParamsProviders,
   ModelParamsRequest,
+  ModelTokenLimits,
   ResolvedModelExtendParamList,
   ResolvedModelParams,
 } from './types';
@@ -45,6 +46,9 @@ const attempt = async <T>(
 
 const matchesModel = (card: ModelCardFacts, model: string) =>
   card.id === model || card.deploymentName === model;
+
+const positiveFiniteLimit = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value) && value > 0;
 
 /**
  * Agent config stores the number of history messages, excluding the current
@@ -76,6 +80,19 @@ export const resolveModelExtendParamList = async (
   const userModelRow = await attempt('userModelRow', () =>
     providers.getUserModelRow?.(model, provider),
   );
+  // Resolve per field, keeping later same-provider catalog cards ahead of the
+  // canonical fallback when an enabled/custom projection omits a limit.
+  const matchingCards = cards.filter((card) => matchesModel(card, model));
+  const orderedCards = [
+    ...matchingCards.filter((card) => card.providerId === provider),
+    ...matchingCards.filter((card) => card.providerId !== provider),
+  ];
+  const contextWindowTokens = [
+    userModelRow?.contextWindowTokens,
+    ...orderedCards.map((card) => card.contextWindowTokens),
+  ].find(positiveFiniteLimit);
+  // There is no persisted maxOutput field in ai_models, config or settings.
+  const maxOutput = orderedCards.map((card) => card.maxOutput).find(positiveFiniteLimit);
 
   let modelExtendParams = userModelRow?.extendParams ?? undefined;
   if (modelExtendParams === undefined) {
@@ -87,12 +104,26 @@ export const resolveModelExtendParamList = async (
 
   return {
     canonicalModelCard,
+    contextWindowTokens,
+    maxOutput,
     modelCard,
     modelExtendParams,
     modelHasReasoningExtendParams: (modelExtendParams ?? []).some((param) =>
       REASONING_EXTEND_PARAMS.includes(param),
     ),
     userModelRow,
+  };
+};
+
+/** The same lookup and per-field precedence used by full parameter resolution. */
+export const resolveModelTokenLimits = async (
+  request: Pick<ModelParamsRequest, 'model' | 'provider'>,
+  providers: ModelParamsProviders,
+): Promise<ModelTokenLimits> => {
+  const { contextWindowTokens, maxOutput } = await resolveModelExtendParamList(request, providers);
+  return {
+    ...(contextWindowTokens !== undefined && { contextWindowTokens }),
+    ...(maxOutput !== undefined && { maxOutput }),
   };
 };
 
@@ -139,8 +170,18 @@ export const readFrozenModelFacts = async (
   providers: ModelParamsProviders,
 ): Promise<FrozenModelFacts> => {
   const { model, provider } = request;
-  const { canonicalModelCard, modelCard, modelHasReasoningExtendParams, userModelRow } =
-    await resolveModelExtendParamList(request, providers);
+  const {
+    canonicalModelCard,
+    contextWindowTokens,
+    maxOutput,
+    modelCard,
+    modelHasReasoningExtendParams,
+    userModelRow,
+  } = await resolveModelExtendParamList(request, providers);
+  const tokenLimits: ModelTokenLimits = {
+    ...(contextWindowTokens !== undefined && { contextWindowTokens }),
+    ...(maxOutput !== undefined && { maxOutput }),
+  };
   // Read the reasoning sources only for models that can consume them, exactly
   // as the per-attempt rules do: a non-reasoning model freezes none.
   const reasoningConfig = modelHasReasoningExtendParams
@@ -154,11 +195,11 @@ export const readFrozenModelFacts = async (
   // calls 404 wherever only the user's endpoint exists.
   const deploymentName = userModelRow?.deploymentName || modelCard?.deploymentName || undefined;
   const mergedModelCard: ModelCardFacts | undefined = modelCard
-    ? { ...modelCard, ...(deploymentName ? { deploymentName } : {}) }
-    : userModelRow?.deploymentName
+    ? { ...modelCard, ...tokenLimits, ...(deploymentName ? { deploymentName } : {}) }
+    : userModelRow?.deploymentName || Object.keys(tokenLimits).length > 0
       ? // A custom model has no bundled card; the user row alone still names
         // its deployment, so freeze a minimal card for the transport.
-        { deploymentName: userModelRow.deploymentName, id: model, providerId: provider }
+        { deploymentName, id: model, providerId: provider, ...tokenLimits }
       : undefined;
 
   return {
@@ -179,6 +220,7 @@ export const readFrozenModelFacts = async (
     model,
     provider,
     reasoningConfig,
+    tokenLimits,
     userModelRow,
   };
 };

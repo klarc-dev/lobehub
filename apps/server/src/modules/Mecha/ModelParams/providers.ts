@@ -15,6 +15,7 @@ export interface ServerModelParamsSource {
 
 const toModelCard = (item: LobeDefaultAiModelListItem): ModelCardFacts => ({
   abilities: item.abilities,
+  contextWindowTokens: item.contextWindowTokens,
   deploymentName: item.config?.deploymentName,
   displayName: item.displayName,
   extendParams:
@@ -23,6 +24,7 @@ const toModelCard = (item: LobeDefaultAiModelListItem): ModelCardFacts => ({
       : undefined,
   id: item.id,
   knowledgeCutoff: item.knowledgeCutoff,
+  maxOutput: 'maxOutput' in item && typeof item.maxOutput === 'number' ? item.maxOutput : undefined,
   providerId: item.providerId,
 });
 
@@ -69,6 +71,7 @@ export const createServerModelParamsProviders = ({
       if (!row) return null;
       return {
         abilities: row.abilities,
+        contextWindowTokens: row.contextWindowTokens,
         // Deployment-catalog providers resolve the request model by this alias
         // (merged over the bundled card when the facts freeze); without it the
         // transport injects the catalog default instead of the user's endpoint.
