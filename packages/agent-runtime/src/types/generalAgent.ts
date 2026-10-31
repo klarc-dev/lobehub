@@ -117,6 +117,8 @@ export interface GeneralAgentConfig {
   globalInterventionAudits?: GlobalInterventionAuditConfig[];
   modelRuntimeConfig?: AgentState['modelRuntimeConfig'];
   operationId: string;
+  /** Resolve the host's effective step schemas before compression and LLM planning. */
+  resolveTools?: (state: AgentState, allowedToolNames?: string[]) => any[] | undefined;
   /** Phase-level tools exposed to this agent run. Falls back to AgentState.tools. */
   tools?: any[];
   userId?: string;

@@ -6,6 +6,7 @@ import { type UIChatMessage } from '@lobechat/types';
 import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
 
+import { resolveServerCallLlmTooling } from '@/server/modules/AgentRuntime/adapters/serverCallLlmTooling';
 import {
   createRuntimeExecutors,
   type RuntimeExecutorContext,
@@ -186,6 +187,9 @@ export async function createAgentRuntime(
     },
     modelRuntimeConfig,
     operationId,
+    // Use the same step activations, device policy and tool-name filtering as send.
+    resolveTools: (state: AgentState, allowedToolNames?: string[]) =>
+      resolveServerCallLlmTooling({ operationId, stepIndex }, state, allowedToolNames).tools,
     userId: origin?.userId,
   };
 

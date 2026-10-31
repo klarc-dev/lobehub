@@ -88,7 +88,10 @@ export class GeneralChatAgent implements Agent {
   }
 
   private getTools(state: AgentState, fallbackTools?: any[]): any[] | undefined {
-    return this.config.tools ?? selectRunTools(state) ?? fallbackTools;
+    if (this.config.tools) return this.config.tools;
+    if (this.config.resolveTools)
+      return this.config.resolveTools(state, this.config.allowedToolNames);
+    return selectRunTools(state) ?? fallbackTools;
   }
 
   private getAllowedToolNamesPayload() {
@@ -520,10 +523,6 @@ export class GeneralChatAgent implements Agent {
    * itself is never compressed.
    */
   private checkContextBudget(messages: any[], tools: any[] | undefined, state: AgentState) {
-    // Mirror RuntimeExecutors.callLlm: when state.forceFinish is set, the
-    // executor strips all tools via buildStepToolDelta (deactivatedToolIds: ['*']),
-    // so they must not count against the compression budget either — otherwise
-    // we'd burn an extra summarization pass on tool tokens that won't be sent.
     return shouldCompress(messages, {
       maxWindowToken: this.config.compressionConfig?.maxWindowToken,
       thresholdRatio: this.getCompressionThresholdRatio(messages),
