@@ -503,7 +503,6 @@ export const createOpenAICompatibleRuntime = <T extends Record<string, any> = an
           processedPayload = { ...payload, apiMode: 'responses' } as any;
         }
 
-        // Guard before dispatch using scoped facts when available.
         if (chatCompletion?.contextPreFlight) {
           assertScopedContextWithinWindow(
             processedPayload,
