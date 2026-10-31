@@ -217,6 +217,20 @@ describe('ComposioService.getComposioManifests', () => {
 describe('ComposioService.executeComposioTool', () => {
   const params = { args: { to: 'a@b.c' }, identifier: 'gmail', toolSlug: 'GMAIL_SEND_EMAIL' };
 
+  for (const response of [
+    { data: { misleading: 'payload' }, successful: false },
+    { data: {}, error: 'sensitive-provider-details', successful: true },
+  ]) {
+    it('fails closed and sanitizes explicit provider errors', async () => {
+      mocks.connectorQueryByIdentifiers.mockResolvedValue([activeConnectorRow()]);
+      mocks.toolsExecute.mockResolvedValue(response);
+      const result = await service().executeComposioTool(params);
+      expect(result).toMatchObject({ error: { code: 'COMPOSIO_TOOL_FAILED' }, success: false });
+      expect(JSON.stringify(result)).not.toContain('sensitive-provider-details');
+      expect(mocks.markComposioUnavailable).not.toHaveBeenCalled();
+    });
+  }
+
   /** @example Legacy GitHub Composio tools cannot execute after Market becomes canonical. */
   it('rejects apps removed from the Composio catalog', async () => {
     const result = await service().executeComposioTool({

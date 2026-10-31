@@ -21,6 +21,7 @@ import {
   ConnectorStatus,
 } from '@/database/schemas';
 import { getComposioClient } from '@/libs/composio';
+import { listComposioTools } from '@/libs/composio/listTools';
 import { inferCrudType } from '@/libs/mcp/utils';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
@@ -288,26 +289,22 @@ export const composioRouter = router({
         { callbackUrl, ...(agentId ? { allowMultiple: true } : {}) },
       );
 
-      let rawTools: any[] = [];
+      let rawTools: ComposioToolInput[] = [];
       try {
-        const toolsResp = await (ctx.composioClient.tools as any).getRawComposioTools({
-          toolkits: [appSlug],
-        });
-        rawTools = toolsResp?.items || toolsResp || [];
+        rawTools = await listComposioTools(ctx.composioClient, appSlug);
       } catch {
-        // tools may not be available before auth
+        // Tools may not be available before auth. Never seed a partial page.
       }
 
       const manifest: ToolManifest = {
         api: Array.isArray(rawTools)
           ? rawTools.map((tool: any) => ({
               description: tool.description || '',
-              name: tool.slug || tool.name || '',
-              parameters: tool.inputParameters ||
-                tool.inputSchema || {
-                  properties: {},
-                  type: 'object',
-                },
+              name: tool.name,
+              parameters: tool.inputSchema || {
+                properties: {},
+                type: 'object',
+              },
             }))
           : [],
         identifier,

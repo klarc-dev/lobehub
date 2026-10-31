@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   pluginFindById: vi.fn(),
   processToolCallResult: vi.fn(),
   toolsExecute: vi.fn(),
+  toolsList: vi.fn(),
 }));
 
 vi.mock('@/database/core/db-adaptor', () => ({ getServerDB: vi.fn(async () => ({})) }));
@@ -30,7 +31,10 @@ vi.mock('@/database/models/plugin', () => ({
 }));
 
 vi.mock('@/libs/composio', () => ({
-  getComposioClient: () => ({ tools: { execute: mocks.toolsExecute } }),
+  getComposioClient: () => ({
+    getClient: () => ({ tools: { list: mocks.toolsList } }),
+    tools: { execute: mocks.toolsExecute },
+  }),
   isComposioConnectedAccountNotFoundError: mocks.isComposioNotFound,
 }));
 
@@ -58,7 +62,63 @@ beforeEach(() => {
   mocks.processToolCallResult.mockResolvedValue({ content: 'ok', success: true });
 });
 
+describe('composioToolsRouter discovery', () => {
+  for (const method of ['getActions', 'listActions'] as const) {
+    it(`${method} returns tools beyond the first page without touching connections`, async () => {
+      mocks.toolsList.mockResolvedValueOnce({
+        items: [{ description: 'first', input_parameters: { type: 'object' }, slug: 'FIRST' }],
+        next_cursor: 'next',
+      });
+      mocks.toolsList.mockResolvedValueOnce({
+        items: [
+          {
+            description: 'batch',
+            input_parameters: { type: 'object' },
+            slug: 'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
+          },
+        ],
+        next_cursor: null,
+      });
+
+      const result = await caller()[method]({ appSlug: 'googledocs' });
+
+      expect(result.tools.map((tool) => tool.name)).toEqual([
+        'FIRST',
+        'GOOGLEDOCS_UPDATE_EXISTING_DOCUMENT',
+      ]);
+      expect(mocks.toolsList).toHaveBeenCalledWith(expect.objectContaining({ cursor: 'next' }));
+      expect(mocks.toolsExecute).not.toHaveBeenCalled();
+      expect(mocks.connectorQueryByIdentifiers).not.toHaveBeenCalled();
+      expect(mocks.markComposioUnavailable).not.toHaveBeenCalled();
+    });
+  }
+});
+
 describe('composioToolsRouter.executeAction', () => {
+  for (const response of [
+    { data: { misleading: 'payload' }, successful: false },
+    { data: {}, error: 'sensitive-provider-details', successful: true },
+  ]) {
+    it('returns a sanitized error for an explicit provider failure', async () => {
+      mocks.pluginFindById.mockResolvedValue({
+        customParams: { composio: { connectedAccountId: 'ca-own' } },
+      });
+      mocks.toolsExecute.mockResolvedValue(response);
+
+      await caller().executeAction(input);
+
+      expect(mocks.processToolCallResult).toHaveBeenCalledWith({
+        content: [
+          { text: expect.stringContaining('Composio tool execution failed'), type: 'text' },
+        ],
+        isError: true,
+      });
+      expect(JSON.stringify(mocks.processToolCallResult.mock.calls)).not.toContain(
+        'sensitive-provider-details',
+      );
+    });
+  }
+
   it('resolves connectedAccountId from connector metadata (new path)', async () => {
     mocks.connectorQueryByIdentifiers.mockResolvedValue([
       { id: 'conn-gmail', metadata: { composio: { connectedAccountId: 'ca-connector' } } },

@@ -157,6 +157,14 @@ export class ComposioService {
       log('executeComposioTool: response: %O', result);
 
       const data = result as any;
+      if (data.successful === false || data.error) {
+        return {
+          content:
+            'Composio tool execution failed. Verify authorization and the requested operation before retrying.',
+          error: { code: 'COMPOSIO_TOOL_FAILED', message: 'Composio tool execution failed' },
+          success: false,
+        };
+      }
       const content = data?.data || data?.result || data;
 
       let resultContent = '';

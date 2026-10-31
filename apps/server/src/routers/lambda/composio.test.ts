@@ -64,6 +64,8 @@ vi.mock('@/database/models/connectorTool', () => ({
   }),
 }));
 
+vi.mock('@/libs/composio/listTools', () => ({ listComposioTools: mocks.getRawComposioTools }));
+
 vi.mock('@/libs/composio', () => ({
   getComposioClient: () => ({
     authConfigs: { create: mocks.authConfigsCreate, list: mocks.authConfigsList },
@@ -145,9 +147,9 @@ describe('composioRouter.createConnection dual-write', () => {
   it('mirrors a pending connection into user_connectors + tools', async () => {
     mocks.getServerComposioAuthConfigId.mockReturnValue('ac_env');
     mocks.connectedAccountsLink.mockResolvedValue({ id: 'ca-1', redirectUrl: 'https://auth' });
-    mocks.getRawComposioTools.mockResolvedValue({
-      items: [{ description: 'send', inputParameters: { type: 'object' }, slug: 'GMAIL_SEND' }],
-    });
+    mocks.getRawComposioTools.mockResolvedValue([
+      { description: 'send', inputSchema: { type: 'object' }, name: 'GMAIL_SEND' },
+    ]);
 
     await caller().createConnection({ appSlug: 'GMAIL', identifier: 'gmail', label: 'Gmail' });
 
