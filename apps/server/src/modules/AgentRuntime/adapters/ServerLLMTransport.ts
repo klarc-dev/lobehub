@@ -63,6 +63,7 @@ import type { LlmExecutionSite } from '../llmRelay/resolveLlmExecutionSite';
 import { resolveLlmExecutionSite } from '../llmRelay/resolveLlmExecutionSite';
 import { getAgentRuntimeRedisClient } from '../redis';
 import type { IStreamEventManager } from '../types';
+import { resolveRuntimePayloadMaxTokens } from './runtimeMaxTokens';
 import { createServerCallLlmAttempt } from './serverCallLlmAttempt';
 
 const getErrorMessage = (error: unknown): string => {
@@ -402,6 +403,11 @@ export class ServerLLMTransport implements LLMTransport {
     // Compression shares the run's provider, so it must share the same wire protocol:
     // the browser resolved `apiMode` from the provider switch, a server run has to as well.
     const apiMode = await this.getResponseApiMode(payload.provider);
+    runtimePayload.max_tokens = await resolveRuntimePayloadMaxTokens(payload, {
+      ...this.ctx,
+      modelFacts: state?.modelRuntimeConfig?.modelFacts,
+      provider: payload.provider,
+    });
     let content = '';
     let usage: LLMStreamResult['usage'];
     let streamError: unknown;
@@ -708,6 +714,11 @@ export class ServerLLMTransport implements LLMTransport {
       }),
       ...(deploymentName && { deploymentName }),
     };
+    chatPayload.max_tokens = await resolveRuntimePayloadMaxTokens(chatPayload, {
+      ...this.ctx,
+      modelFacts: input.state.modelRuntimeConfig?.modelFacts,
+      provider: input.provider,
+    });
     const operationLogId = `${this.ctx.operationId}:${this.ctx.stepIndex}`;
     const attempt = createServerCallLlmAttempt({
       attempt: input.attempt,

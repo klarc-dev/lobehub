@@ -1,7 +1,7 @@
 /**
  * @vitest-environment node
  */
-import { getModelPropertyWithFallback } from '@lobechat/model-runtime';
+import { resolveRuntimeModelTokenLimits } from '@/server/modules/Mecha/ModelParams/runtimeTokenLimits';
 import type { UIChatMessage } from '@lobechat/types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,6 +9,10 @@ import { hookDispatcher } from '../../hooks';
 import { type AgentExecutionParams } from '../../types';
 import { AgentRuntimeService } from '..';
 import { buildPersistedToolChain, setUpService } from './testUtils';
+
+vi.mock('@/server/modules/Mecha/ModelParams/runtimeTokenLimits', () => ({
+  resolveRuntimeModelTokenLimits: vi.fn().mockResolvedValue({}),
+}));
 
 vi.mock('@lobechat/model-runtime', (...args) =>
   import('./testUtils').then((m) =>
@@ -188,7 +192,9 @@ describe('AgentRuntimeService', () => {
     });
 
     it('should pass resolved contextWindowTokens into compressionConfig', async () => {
-      vi.mocked(getModelPropertyWithFallback).mockResolvedValueOnce(200_000);
+      vi.mocked(resolveRuntimeModelTokenLimits).mockResolvedValueOnce({
+        contextWindowTokens: 200_000,
+      });
 
       let capturedConfig: any;
       const serviceWithFactory = new AgentRuntimeService(mockDb, mockUserId, {
@@ -207,10 +213,13 @@ describe('AgentRuntimeService', () => {
         stepIndex: 1,
       });
 
-      expect(getModelPropertyWithFallback).toHaveBeenCalledWith(
-        'gpt-4o-mini',
-        'contextWindowTokens',
-        'openai',
+      expect(resolveRuntimeModelTokenLimits).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'gpt-4o-mini',
+          provider: 'openai',
+          serverDB: mockDb,
+          userId: mockUserId,
+        }),
       );
       expect(capturedConfig).toEqual(
         expect.objectContaining({
@@ -223,7 +232,7 @@ describe('AgentRuntimeService', () => {
     });
 
     it('should fall back to undefined maxWindowToken when model lookup misses', async () => {
-      vi.mocked(getModelPropertyWithFallback).mockResolvedValueOnce(undefined);
+      vi.mocked(resolveRuntimeModelTokenLimits).mockResolvedValueOnce({});
 
       let capturedConfig: any;
       const serviceWithFactory = new AgentRuntimeService(mockDb, mockUserId, {

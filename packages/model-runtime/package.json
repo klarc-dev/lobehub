@@ -18,6 +18,7 @@
     "./utils/anthropicToolSchema": "./src/utils/anthropicToolSchema.ts",
     "./utils/createError": "./src/utils/createError.ts",
     "./utils/modelExtendParams": "./src/utils/modelExtendParams.ts",
+    "./utils/resolveSafeMaxTokens": "./src/utils/resolveSafeMaxTokens.ts",
     "./utils/uriParser": "./src/utils/uriParser.ts",
     "./vertexai": "./src/providers/vertexai/index.ts"
   },

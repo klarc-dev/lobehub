@@ -2,7 +2,6 @@ import type { AgentRunLlmExecutor, AgentState } from '@lobechat/agent-runtime';
 import { AgentRuntime, findInMessages, GeneralChatAgent } from '@lobechat/agent-runtime';
 import { DASHBOARD_DRY_RUN_AUDIT } from '@lobechat/builtin-tool-dashboard';
 import { dynamicInterventionAudits } from '@lobechat/builtin-tools/dynamicInterventionAudits';
-import { getModelPropertyWithFallback } from '@lobechat/model-runtime';
 import { type UIChatMessage } from '@lobechat/types';
 import { RequestTrigger } from '@lobechat/types';
 import debug from 'debug';
@@ -11,6 +10,7 @@ import {
   createRuntimeExecutors,
   type RuntimeExecutorContext,
 } from '@/server/modules/AgentRuntime/RuntimeExecutors';
+import { resolveRuntimeModelTokenLimits } from '@/server/modules/Mecha/ModelParams/runtimeTokenLimits';
 import { LocalQueueServiceImpl } from '@/server/services/queue/impls';
 import { createWidgetDryRunAudit } from '@/server/services/widget/dryRunAudit';
 import { stateHasEntityFileEdits } from '@/server/services/workRegistration';
@@ -152,11 +152,16 @@ export async function createAgentRuntime(
   const modelRuntimeConfig = state?.modelRuntimeConfig;
   const contextWindowTokens =
     modelRuntimeConfig?.model && modelRuntimeConfig?.provider
-      ? await getModelPropertyWithFallback<number | undefined>(
-          modelRuntimeConfig.model,
-          'contextWindowTokens',
-          modelRuntimeConfig.provider,
-        )
+      ? (
+          await resolveRuntimeModelTokenLimits({
+            model: modelRuntimeConfig.model,
+            modelFacts: modelRuntimeConfig.modelFacts,
+            provider: modelRuntimeConfig.provider,
+            serverDB: deps.serverDB,
+            userId: deps.userId,
+            workspaceId: deps.workspaceId,
+          })
+        ).contextWindowTokens
       : undefined;
 
   const world = state?.world;

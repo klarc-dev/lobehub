@@ -7,6 +7,7 @@ import { AiModelModel } from '@/database/models/aiModel';
 import { AiProviderModel } from '@/database/models/aiProvider';
 import { resolveModelMediaCapabilities } from '@/server/modules/AgentRuntime/resolveModelMediaCapabilities';
 import { createServerModelParamsProviders } from '@/server/modules/Mecha/ModelParams/providers';
+import { loadRuntimeModelCatalog } from '@/server/modules/Mecha/ModelParams/runtimeTokenLimits';
 
 import { resolveServerSearchDecision } from '../../searchDecision';
 import type { ExecRunContext } from '../../types';
@@ -81,7 +82,7 @@ export const resolveModelContext = async (
     },
     {
       ...createServerModelParamsProviders({
-        builtinModels,
+        builtinModels: await loadRuntimeModelCatalog(provider, builtinModels),
         serverDB: deps.db,
         userId: deps.userId,
         workspaceId: deps.workspaceId,
@@ -91,6 +92,7 @@ export const resolveModelContext = async (
         activeModelMetadata
           ? {
               abilities: activeModelMetadata.abilities,
+              contextWindowTokens: activeModelMetadata.contextWindowTokens,
               // Deployment-catalog providers resolve the request model by the
               // user-configured alias when present (merged over the bundled
               // card when the facts freeze).
