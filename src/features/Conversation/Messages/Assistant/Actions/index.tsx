@@ -9,6 +9,7 @@ import {
   type MessageActionContext,
   type MessageActionSlot,
 } from '../../components/MessageActionBar';
+import { ReadAloud } from '../../components/ReadAloud';
 
 const DEFAULT_BAR_WITH_TOOLS: MessageActionSlot[] = ['delAndRegenerate', 'copy'];
 const DEFAULT_BAR: MessageActionSlot[] = ['edit', 'copy'];
@@ -84,8 +85,13 @@ export const AssistantActionsBar = memo<AssistantActionsBarProps>(({ actionsConf
     <MessageActionBar
       bar={actionsConfig?.bar ?? defaultBar}
       ctx={ctx}
-      leading={<ReactionPicker messageId={id} />}
       menu={actionsConfig?.menu ?? DEFAULT_MENU}
+      leading={
+        <>
+          <ReactionPicker messageId={id} />
+          {content && content !== LOADING_FLAT && <ReadAloud text={content} />}
+        </>
+      }
     />
   );
 });

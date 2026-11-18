@@ -9,6 +9,18 @@ import { AssistantActionsBar } from '../../Assistant/Actions';
 import { UserActionsBar } from '../../User/Actions';
 import { GroupActionsBar } from './index';
 
+vi.mock('../../components/ReadAloud', () => ({
+  ReadAloud: ({ text }: { text: string }) => (
+    <button aria-label="Read aloud" data-testid="message-read-aloud">
+      {text}
+    </button>
+  ),
+}));
+
+vi.mock('@/store/user', () => ({ useUserStore: vi.fn() }));
+vi.mock('@/store/user/selectors', () => ({ userGeneralSettingsSelectors: {} }));
+vi.mock('../../components/MessageBranch', () => ({ default: () => null }));
+
 const storeMock = vi.hoisted(() => ({ isGenerating: false }));
 
 // Stub the action bar to expose the resolved `bar` / `menu` slots verbatim.
@@ -52,7 +64,7 @@ const renderBar = (props: { contentId?: string }) =>
   render(<GroupActionsBar data={data} id="group-1" {...props} />);
 
 describe('message action defaults', () => {
-  it('does not expose the retired text-to-speech action', () => {
+  it('exposes native read aloud for assistant text without restoring the retired menu action', () => {
     render(
       <>
         <AssistantActionsBar
@@ -66,6 +78,7 @@ describe('message action defaults', () => {
       </>,
     );
 
+    expect(screen.getByRole('button', { name: 'Read aloud' })).toHaveTextContent('Assistant reply');
     for (const bar of screen.getAllByTestId('action-bar')) {
       expect(bar.getAttribute('data-menu')?.split(',')).not.toContain('tts');
     }

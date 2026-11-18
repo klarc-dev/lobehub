@@ -1,4 +1,11 @@
 export default {
+  'readAloud.play': 'Read aloud',
+  'readAloud.stop': 'Stop reading aloud',
+  'readAloud.loading': 'Preparing audio. Click to cancel.',
+  'readAloud.empty': 'There is no text to read aloud.',
+  'readAloud.tooLong': 'Read aloud supports up to 2,000 characters. Choose a shorter message.',
+  'readAloud.failed':
+    'Audio could not be played. Check your speech provider settings and try again.',
   'sharePage.app.open': 'Open app',
   'sharePage.app.help': 'Trouble opening the app?',
   'sharePage.app.helpDescription':
