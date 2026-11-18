@@ -2,6 +2,8 @@ import type { UserTTSConfig } from '@lobechat/types';
 
 export const DEFAULT_TTS_CONFIG: UserTTSConfig = {
   openAI: {
-    ttsModel: 'tts-1',
+    provider: 'openai-audio',
+    ttsModel: 'gpt-realtime-2.1',
+    voice: 'marin',
   },
 };
