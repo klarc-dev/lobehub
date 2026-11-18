@@ -6,6 +6,8 @@ import type { AiModelType } from 'model-bank';
 import { LOBE_DEFAULT_MODEL_LIST } from 'model-bank';
 import type OpenAI from 'openai';
 import type { Stream } from 'openai/streaming';
+import { isRealtimeSpeechModel, synthesizeRealtimeSpeech } from './realtimeSpeech';
+import { getTranscriptionLanguage } from './transcriptionLanguage';
 
 import { ErrorClassifier, refineErrorCode } from '../../errors';
 import {
@@ -1168,22 +1170,16 @@ export const createOpenAICompatibleRuntime = <T extends Record<string, any> = an
     }
 
     async textToSpeech(payload: TextToSpeechPayload, options?: TextToSpeechOptions) {
-      const log = debug(`${this.logPrefix}:textToSpeech`);
       const requestPayload = withMappedModelId(payload, this.modelIdMappingOptions);
-      log(
-        'textToSpeech called with input length: %d, voice: %s',
-        payload.input?.length || 0,
-        payload.voice,
-      );
-
+      if (isRealtimeSpeechModel(requestPayload.model)) {
+        return synthesizeRealtimeSpeech(this.client, requestPayload, options);
+      }
       try {
-        const mp3 = await this.client.audio.speech.create(requestPayload as any, {
+        const audio = await this.client.audio.speech.create(requestPayload, {
           headers: options?.headers,
           signal: options?.signal,
         });
-        const buffer = await mp3.arrayBuffer();
-        log('generated audio with size: %d bytes', buffer.byteLength);
-        return buffer;
+        return await audio.arrayBuffer();
       } catch (error) {
         throw this.handleError(error);
       }
@@ -1212,7 +1208,7 @@ export const createOpenAICompatibleRuntime = <T extends Record<string, any> = an
         const transcription = await this.getTranscriptionClient().audio.transcriptions.create(
           {
             file: uploadFile,
-            language,
+            ...getTranscriptionLanguage(requestModel, language),
             model: requestModel,
             prompt,
             response_format: responseFormat,

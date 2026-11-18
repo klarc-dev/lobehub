@@ -1,5 +1,5 @@
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
+import { speechMimeType, synthesizeInput } from './ttsInput';
 
 import {
   requireWorkspaceRoleWhenScoped,
@@ -9,20 +9,12 @@ import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
 
-const synthesizeInput = z.object({
-  input: z.string().min(1),
-  model: z.string().min(1),
-  provider: z.string().min(1).default('openai'),
-  speed: z.number().min(0.25).max(4).optional(),
-  voice: z.string().min(1).default('alloy'),
-});
-
 const ttsProcedure = wsCompatProcedure
   .use(serverDatabase)
   .use(requireWorkspaceRoleWhenScoped('member'));
 
 export const ttsRouter = router({
-  synthesize: ttsProcedure.input(synthesizeInput).mutation(async ({ ctx, input }) => {
+  synthesize: ttsProcedure.input(synthesizeInput).mutation(async ({ ctx, input, signal }) => {
     const { provider, ...payload } = input;
     const runtime = await initModelRuntimeFromDB(
       ctx.serverDB,
@@ -31,7 +23,7 @@ export const ttsRouter = router({
       ctx.workspaceId ?? undefined,
     );
 
-    const audio = await runtime.textToSpeech(payload, { user: ctx.userId });
+    const audio = await runtime.textToSpeech(payload, { signal, user: ctx.userId });
 
     if (!audio) {
       throw new TRPCError({
@@ -40,6 +32,16 @@ export const ttsRouter = router({
       });
     }
 
-    return { audioBase64: Buffer.from(audio).toString('base64') };
+    if (audio.byteLength > 3 * 1024 * 1024 + 44) {
+      throw new TRPCError({
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Synthesized audio exceeds the inline response limit.',
+      });
+    }
+    return {
+      audioBase64: Buffer.from(audio).toString('base64'),
+      format: payload.response_format,
+      mimeType: speechMimeType[payload.response_format],
+    };
   }),
 });
