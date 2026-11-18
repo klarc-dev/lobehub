@@ -6,8 +6,6 @@ import type { AiModelType } from 'model-bank';
 import { LOBE_DEFAULT_MODEL_LIST } from 'model-bank';
 import type OpenAI from 'openai';
 import type { Stream } from 'openai/streaming';
-import { isRealtimeSpeechModel, synthesizeRealtimeSpeech } from './realtimeSpeech';
-import { getTranscriptionLanguage } from './transcriptionLanguage';
 
 import { ErrorClassifier, refineErrorCode } from '../../errors';
 import {
@@ -95,6 +93,7 @@ import {
   recordOpenAIResponsesResponse,
   resolveOpenAIResponseWithMetadata,
 } from './providerDiagnostics';
+import { isRealtimeSpeechModel, synthesizeRealtimeSpeech } from './realtimeSpeech';
 import {
   convertChatCompletionToolToResponseTool,
   stripChatCompletionParameters,
@@ -104,6 +103,7 @@ import {
   parseStructuredToolArguments,
   StructuredOutputError,
 } from './structuredOutput';
+import { getTranscriptionLanguage } from './transcriptionLanguage';
 
 export type { PollVideoStatusResult };
 export * from './createVideo';

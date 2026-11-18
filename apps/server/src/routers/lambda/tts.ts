@@ -1,5 +1,4 @@
 import { TRPCError } from '@trpc/server';
-import { speechMimeType, synthesizeInput } from './ttsInput';
 
 import {
   requireWorkspaceRoleWhenScoped,
@@ -8,6 +7,8 @@ import {
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { initModelRuntimeFromDB } from '@/server/modules/ModelRuntime';
+
+import { speechMimeType, synthesizeInput } from './ttsInput';
 
 const ttsProcedure = wsCompatProcedure
   .use(serverDatabase)

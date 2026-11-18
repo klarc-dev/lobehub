@@ -22,7 +22,7 @@ const VOICES = new Set([
   'marin',
   'cedar',
 ]);
-const normalizeTranscript = (text: string) => text.normalize('NFC').replace(/\s+/gu, ' ').trim();
+const normalizeTranscript = (text: string) => text.normalize('NFC').replaceAll(/\s+/gu, ' ').trim();
 
 /**
  * A single out-of-band narration, not an interactive voice agent. Realtime is a
@@ -149,7 +149,7 @@ export async function synthesizeRealtimeSpeech(
             finish(new Error('Realtime speech audio exceeded size limit'));
             return;
           }
-          if (!delta || delta.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(delta)) {
+          if (!delta || delta.length % 4 !== 0 || !/^[A-Z0-9+/]*={0,2}$/i.test(delta)) {
             finish(new Error('Invalid Realtime speech audio'));
             return;
           }

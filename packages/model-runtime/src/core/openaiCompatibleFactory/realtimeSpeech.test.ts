@@ -1,6 +1,7 @@
 // @vitest-environment node
-import OpenAI from 'openai';
 import { EventEmitter } from 'node:events';
+
+import OpenAI from 'openai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { synthesizeRealtimeSpeech } from './realtimeSpeech';
